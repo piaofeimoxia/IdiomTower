@@ -102,7 +102,7 @@ export class GameManager extends Component {
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.2.11 启动：白像素与顺拐修正版');
+        console.log('成语塔防 Demo v0.2.13 启动：普通兵走路优化版');
         GameManager.inst = this;
         this.readCanvasSize();
         this.preloadWalkFrames();
@@ -141,7 +141,7 @@ export class GameManager extends Component {
             doneCount++;
             if (doneCount >= 2) {
                 this.walkFramesReady = true;
-                this.createTip('v0.2.11：白像素已处理，走路改为正常四帧循环');
+                this.createTip('v0.2.13：盾兵保留当前步态，普通兵改为更顺眼的往返步态');
                 console.log(`走路帧加载完成：basic=${this.basicWalkFrames.length}, shield=${this.shieldWalkFrames.length}`);
             }
         };
@@ -210,7 +210,7 @@ export class GameManager extends Component {
         this.createCharTiles();
 
         if (this.walkFramesReady) {
-            this.createTip('v0.2.11：移除白色残影，修正脚步顺拐感');
+            this.createTip('v0.2.13：只重点优化普通小兵走路自然度');
         } else {
             this.createTip('正在加载走路动画帧...');
         }
@@ -564,7 +564,7 @@ export class GameManager extends Component {
         const enemy = enemyNode.addComponent(Enemy);
 
         if (frameNodes.length > 0 && spriteRoot) {
-            enemy.setAnimatedNodes(spriteRoot, frameNodes, 4);
+            enemy.setAnimatedNodes(spriteRoot, frameNodes, 4, isShieldEnemy ? 'shield' : 'basic');
         }
 
         if (isShieldEnemy) enemy.init(34 + Math.random() * 8, 3, 1, this.getEnemyHitX());
