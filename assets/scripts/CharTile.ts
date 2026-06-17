@@ -1,5 +1,6 @@
 import { _decorator, Component, Node, Vec3, EventTouch, UITransform } from 'cc';
 import { GameManager } from './GameManager';
+
 const { ccclass } = _decorator;
 
 @ccclass('CharTile')
@@ -37,15 +38,18 @@ export class CharTile extends Component {
 
     private onTouchMove(event: EventTouch) {
         if (!this.dragging || !this.node.parent) return;
+
         const uiPos = event.getUILocation();
         const parentUI = this.node.parent.getComponent(UITransform);
         if (!parentUI) return;
+
         const local = parentUI.convertToNodeSpaceAR(new Vec3(uiPos.x, uiPos.y, 0));
         this.node.setPosition(local);
     }
 
     private onTouchEnd() {
         if (!this.dragging) return;
+
         this.dragging = false;
         this.node.setScale(1, 1, 1);
 

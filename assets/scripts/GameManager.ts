@@ -31,14 +31,15 @@ export class GameManager extends Component {
     private enemies: Enemy[] = [];
 
     private gateHp = 12;
+    private gateShield = 0;
+
     private spawnedCount = 0;
     private killedCount = 0;
     private spawnTimer = 0;
     private waveRunning = true;
     private gameOver = false;
 
-    private readonly totalEnemies = 16;
-    private readonly idiomChars = ['万', '箭', '齐', '发'];
+    private readonly totalEnemies = 18;
 
     private gateHpLabel: Label | null = null;
     private waveLabel: Label | null = null;
@@ -47,37 +48,35 @@ export class GameManager extends Component {
     private canvasW = 1280;
     private canvasH = 720;
 
-    /**
-     * 资源路径说明：
-     * 1. 基础素材请放到：assets/resources/textures/
-     *    例如：assets/resources/textures/gate.png
-     *
-     * 2. 后续扩展素材也统一放到：assets/resources/textures/
-     *    例如：assets/resources/textures/enemy_basic_soldier.png
-     *
-     * Cocos 3.x 代码加载 SpriteFrame 时，路径写法为：
-     * resources.load('textures/gate/spriteFrame', SpriteFrame, ...)
-     */
     private readonly texturePath: Record<string, string> = {
         title: 'textures/ui_title',
         gate: 'textures/gate',
         slot: 'textures/slot_empty',
+
         tile_wan: 'textures/tile_wan',
         tile_jian: 'textures/tile_jian',
         tile_qi: 'textures/tile_qi',
         tile_fa: 'textures/tile_fa',
+
+        tile_gu: 'textures/tile_gu',
+        tile_ruo: 'textures/tile_ruo',
+        tile_jin: 'textures/tile_jin',
+        tile_tang: 'textures/tile_tang',
+
         tile_huo: 'textures/tile_huo',
         tile_tu: 'textures/tile_tu',
+
         effect_arrow_rain: 'textures/effect_arrow_rain',
+        effect_blue_shield: 'textures/effect_blue_shield',
         fail_popup: 'textures/ui_fail_popup',
 
-        // 所有素材统一放在 assets/resources/textures/ 下。
         enemy_basic_soldier: 'textures/enemy_basic_soldier',
+        enemy_shield_soldier: 'textures/enemy_shield_soldier',
         enemy_bing_fallback: 'textures/enemy_bing',
     };
 
     onLoad() {
-        console.log('GameManager onLoad 运行了：PNG 资源版');
+        console.log('成语塔防 Demo v0.2 启动');
         GameManager.inst = this;
         this.readCanvasSize();
         this.setupScene();
@@ -87,7 +86,7 @@ export class GameManager extends Component {
         if (this.gameOver || !this.waveRunning) return;
 
         this.spawnTimer += dt;
-        if (this.spawnedCount < this.totalEnemies && this.spawnTimer >= 1.15) {
+        if (this.spawnedCount < this.totalEnemies && this.spawnTimer >= 1.08) {
             this.spawnTimer = 0;
             this.spawnEnemy();
         }
@@ -119,12 +118,9 @@ export class GameManager extends Component {
         this.createGate();
         this.createSlots();
         this.createCharTiles();
-        this.createTip('拖动“万 箭 齐 发”到 4 个槽位，释放万箭齐发清屏');
+        this.createTip('v0.2：万箭齐发清怪，固若金汤加护盾');
     }
 
-    /**
-     * 清空运行时创建的节点，但保留 Canvas 下的 Camera。
-     */
     private clearChildren() {
         for (const child of [...this.node.children]) {
             if (child.name === 'Camera') {
@@ -137,7 +133,6 @@ export class GameManager extends Component {
     private createTitle() {
         const topY = this.canvasH / 2 - 70;
 
-        // 标题图片
         this.createImageNode(
             'title_image',
             [this.texturePath.title],
@@ -145,8 +140,8 @@ export class GameManager extends Component {
             topY + 10,
             Math.min(520, this.canvasW - 120),
             120,
-            '',
-            0
+            '成语塔防',
+            34
         );
 
         this.waveLabel = this.createText(
@@ -160,7 +155,7 @@ export class GameManager extends Component {
     }
 
     private createGate() {
-        const gateX = this.canvasW / 2 - 240;
+        const gateX = this.getGateX();
         const gateY = 70;
 
         this.createImageNode(
@@ -168,20 +163,41 @@ export class GameManager extends Component {
             [this.texturePath.gate],
             gateX,
             gateY,
-            210,
-            150,
+            220,
+            158,
             '城门',
             30
         );
 
         this.gateHpLabel = this.createText(
             'gateHp',
-            `城门血量：${this.gateHp}`,
+            this.getGateHpText(),
             gateX,
             gateY + 125,
             26,
             Color.WHITE
         ).getComponent(Label);
+    }
+
+    private getGateX() {
+        return this.canvasW / 2 - 240;
+    }
+
+    private getEnemyHitX() {
+        return this.getGateX() - 120;
+    }
+
+    private getGateHpText() {
+        if (this.gateShield > 0) {
+            return `城门血量：${this.gateHp}  护盾：${this.gateShield}`;
+        }
+        return `城门血量：${this.gateHp}`;
+    }
+
+    private refreshGateHpLabel() {
+        if (this.gateHpLabel) {
+            this.gateHpLabel.string = this.getGateHpText();
+        }
     }
 
     private createSlots() {
@@ -213,31 +229,42 @@ export class GameManager extends Component {
             }
         }
 
-        const chars = ['万', '箭', '齐', '发', '火', '土'];
+        const chars = ['万', '箭', '齐', '发', '固', '若', '金', '汤', '火', '土'];
         const pathMap: Record<string, string> = {
             '万': this.texturePath.tile_wan,
             '箭': this.texturePath.tile_jian,
             '齐': this.texturePath.tile_qi,
             '发': this.texturePath.tile_fa,
+
+            '固': this.texturePath.tile_gu,
+            '若': this.texturePath.tile_ruo,
+            '金': this.texturePath.tile_jin,
+            '汤': this.texturePath.tile_tang,
+
             '火': this.texturePath.tile_huo,
             '土': this.texturePath.tile_tu,
         };
 
-        const y = -this.canvasH / 2 + 72;
-        const gap = 102;
-        const startX = -gap * 2.5;
+        const gap = 96;
+        const row1Y = -this.canvasH / 2 + 88;
+        const row2Y = -this.canvasH / 2 + 12;
 
         for (let i = 0; i < chars.length; i++) {
             const ch = chars[i];
+            const row = i < 5 ? 0 : 1;
+            const col = row === 0 ? i : i - 5;
+            const x = -gap * 2 + col * gap;
+            const y = row === 0 ? row1Y : row2Y;
+
             const tileNode = this.createImageNode(
                 `tile_${ch}_${i}`,
                 [pathMap[ch]],
-                startX + i * gap,
+                x,
                 y,
-                86,
-                86,
+                76,
+                76,
                 ch,
-                36
+                32
             );
 
             const tile = tileNode.addComponent(CharTile);
@@ -285,8 +312,11 @@ export class GameManager extends Component {
 
     private checkIdiom() {
         const current = this.slots.map(s => s.char).join('');
-        if (current === this.idiomChars.join('')) {
+
+        if (current === '万箭齐发') {
             this.releaseWanJianQiFa();
+        } else if (current === '固若金汤') {
+            this.releaseGuRuoJinTang();
         }
     }
 
@@ -298,9 +328,9 @@ export class GameManager extends Component {
             'effect_arrow_rain',
             [this.texturePath.effect_arrow_rain],
             0,
-            30,
-            240,
-            180,
+            35,
+            260,
+            195,
             '',
             0
         );
@@ -308,9 +338,9 @@ export class GameManager extends Component {
         const effect = this.node.getChildByName('effect_arrow_rain');
         if (effect) {
             tween(effect)
-                .to(0.18, { scale: new Vec3(1.15, 1.15, 1) })
-                .to(0.18, { scale: new Vec3(1, 1, 1) })
-                .delay(0.18)
+                .to(0.16, { scale: new Vec3(1.15, 1.15, 1) })
+                .to(0.16, { scale: new Vec3(1, 1, 1) })
+                .delay(0.22)
                 .call(() => effect.destroy())
                 .start();
         }
@@ -330,6 +360,34 @@ export class GameManager extends Component {
         this.clearSlotsAndRespawnTiles();
     }
 
+    private releaseGuRuoJinTang() {
+        this.gateShield += 5;
+        this.refreshGateHpLabel();
+
+        this.createFloatingText('固若金汤！', this.getGateX(), 135, new Color(120, 220, 255, 255));
+        this.createTip('成语释放：固若金汤，城门获得 5 点护盾');
+
+        const effect = this.createImageNode(
+            'effect_blue_shield',
+            [this.texturePath.effect_blue_shield],
+            this.getGateX(),
+            85,
+            150,
+            150,
+            '',
+            0
+        );
+
+        tween(effect)
+            .to(0.18, { scale: new Vec3(1.18, 1.18, 1) })
+            .to(0.18, { scale: new Vec3(1, 1, 1) })
+            .delay(0.55)
+            .call(() => effect.destroy())
+            .start();
+
+        this.clearSlotsAndRespawnTiles();
+    }
+
     private clearSlotsAndRespawnTiles() {
         for (const slot of this.slots) {
             if (slot.tile && slot.tile.node && slot.tile.node.isValid) {
@@ -343,24 +401,31 @@ export class GameManager extends Component {
 
     private spawnEnemy() {
         const startX = -this.canvasW / 2 + 120;
-        const y = 70 + Math.random() * 140 - 70;
+        const y = 70 + Math.random() * 145 - 72;
+
+        const isShieldEnemy = this.spawnedCount > 0 && this.spawnedCount % 5 === 0;
+        const enemyName = isShieldEnemy ? 'enemy_shield' : 'enemy_basic';
 
         const enemyNode = this.createImageNode(
-            `enemy_${this.spawnedCount}`,
-            [
-                this.texturePath.enemy_basic_soldier,
-                this.texturePath.enemy_bing_fallback,
-            ],
+            `${enemyName}_${this.spawnedCount}`,
+            isShieldEnemy
+                ? [this.texturePath.enemy_shield_soldier, this.texturePath.enemy_basic_soldier, this.texturePath.enemy_bing_fallback]
+                : [this.texturePath.enemy_basic_soldier, this.texturePath.enemy_bing_fallback],
             startX,
             y,
-            72,
-            72,
+            isShieldEnemy ? 78 : 70,
+            isShieldEnemy ? 78 : 70,
             '兵',
             28
         );
 
         const enemy = enemyNode.addComponent(Enemy);
-        enemy.init(45 + Math.random() * 18);
+        if (isShieldEnemy) {
+            enemy.init(34 + Math.random() * 8, 3, 1, this.getEnemyHitX());
+        } else {
+            enemy.init(45 + Math.random() * 18, 1, 1, this.getEnemyHitX());
+        }
+
         this.enemies.push(enemy);
         this.spawnedCount++;
 
@@ -377,16 +442,28 @@ export class GameManager extends Component {
 
     public enemyHitGate(enemy: Enemy) {
         if (this.gameOver) return;
+
+        const damage = enemy.damage || 1;
+
         this.removeEnemy(enemy, false);
         enemy.node.destroy();
 
-        this.gateHp -= 1;
-        if (this.gateHpLabel) {
-            this.gateHpLabel.string = `城门血量：${this.gateHp}`;
+        if (this.gateShield > 0) {
+            const absorb = Math.min(this.gateShield, damage);
+            this.gateShield -= absorb;
+            const remain = damage - absorb;
+            if (remain > 0) {
+                this.gateHp -= remain;
+            }
+            this.createTip(`护盾抵挡了 ${absorb} 点伤害`);
+        } else {
+            this.gateHp -= damage;
         }
 
+        this.refreshGateHpLabel();
+
         if (this.gateHp <= 4) {
-            this.createTip('城门危急！快拼出“万箭齐发”');
+            this.createTip('城门危急！快拼成语救场');
         }
 
         if (this.gateHp <= 0) {
@@ -407,19 +484,12 @@ export class GameManager extends Component {
                 0,
                 560,
                 220,
-                '',
-                0
+                msg,
+                32
             );
         } else {
             panel = this.createBox('result', 0, 0, 560, 185, new Color(40, 45, 55, 240), '', 34);
             this.createText('result_text', msg, 0, 0, 34, new Color(255, 240, 180, 255));
-        }
-
-        if (!success) {
-            // 失败弹窗图片本身已经带“战斗失败/重新开始”，这里补一个透明触控层即可。
-            const touchLayer = new Node('result_touch_layer');
-            touchLayer.parent = panel;
-            touchLayer.addComponent(UITransform).setContentSize(560, 220);
         }
 
         panel.on(Node.EventType.TOUCH_END, () => this.restart(), this);
@@ -428,6 +498,7 @@ export class GameManager extends Component {
 
     private restart() {
         this.gateHp = 12;
+        this.gateShield = 0;
         this.spawnedCount = 0;
         this.killedCount = 0;
         this.spawnTimer = 0;
@@ -475,11 +546,6 @@ export class GameManager extends Component {
         return node;
     }
 
-    /**
-     * 创建图片节点。
-     * 注意：图片 Sprite 放在子节点上，父节点只负责位置、大小、触摸。
-     * 这样 CharTile 拖拽不会和 Sprite/Label 渲染组件冲突。
-     */
     private createImageNode(
         name: string,
         resourcePaths: string[],
@@ -567,16 +633,12 @@ export class GameManager extends Component {
         }
     }
 
-    /**
-     * 创建纯色圆角盒子，作为结果面板等临时 UI fallback。
-     */
     private createBox(name: string, x: number, y: number, w: number, h: number, color: Color, text: string, fontSize: number): Node {
         const node = new Node(name);
         node.parent = this.node;
         node.setPosition(x, y);
 
-        const ui = node.addComponent(UITransform);
-        ui.setContentSize(w, h);
+        node.addComponent(UITransform).setContentSize(w, h);
 
         const bgNode = new Node(`${name}_bg`);
         bgNode.parent = node;
