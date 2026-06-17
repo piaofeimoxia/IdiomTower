@@ -23,6 +23,12 @@ type SlotData = {
     tile: CharTile | null;
 };
 
+type AnimatedEnemyNode = {
+    node: Node;
+    spriteRoot: Node;
+    frames: Node[];
+};
+
 @ccclass('GameManager')
 export class GameManager extends Component {
     public static inst: GameManager;
@@ -38,6 +44,7 @@ export class GameManager extends Component {
     private spawnTimer = 0;
     private waveRunning = true;
     private gameOver = false;
+    private walkFramesReady = false;
 
     private readonly totalEnemies = 18;
 
@@ -48,6 +55,13 @@ export class GameManager extends Component {
     private canvasW = 1280;
     private canvasH = 720;
 
+    private basicWalkFrames: SpriteFrame[] = [];
+    private shieldWalkFrames: SpriteFrame[] = [];
+
+    /**
+     * 所有 PNG 统一放在：
+     * assets/resources/textures/
+     */
     private readonly texturePath: Record<string, string> = {
         title: 'textures/ui_title',
         gate: 'textures/gate',
@@ -70,20 +84,36 @@ export class GameManager extends Component {
         effect_blue_shield: 'textures/effect_blue_shield',
         fail_popup: 'textures/ui_fail_popup',
 
+        env_stone_path_tile: 'textures/env_stone_path_tile',
+
         enemy_basic_soldier: 'textures/enemy_basic_soldier',
         enemy_shield_soldier: 'textures/enemy_shield_soldier',
         enemy_bing_fallback: 'textures/enemy_bing',
+
+        enemy_basic_walk_0: 'textures/enemy_basic_walk_0',
+        enemy_basic_walk_1: 'textures/enemy_basic_walk_1',
+        enemy_basic_walk_2: 'textures/enemy_basic_walk_2',
+        enemy_basic_walk_3: 'textures/enemy_basic_walk_3',
+
+        enemy_shield_walk_0: 'textures/enemy_shield_walk_0',
+        enemy_shield_walk_1: 'textures/enemy_shield_walk_1',
+        enemy_shield_walk_2: 'textures/enemy_shield_walk_2',
+        enemy_shield_walk_3: 'textures/enemy_shield_walk_3',
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.2 启动');
+        console.log('成语塔防 Demo v0.2.11 启动：白像素与顺拐修正版');
         GameManager.inst = this;
         this.readCanvasSize();
+        this.preloadWalkFrames();
         this.setupScene();
     }
 
     update(dt: number) {
         if (this.gameOver || !this.waveRunning) return;
+
+        // 行走帧未预加载完成前不刷怪，避免第一批敌人没有动画。
+        if (!this.walkFramesReady) return;
 
         this.spawnTimer += dt;
         if (this.spawnedCount < this.totalEnemies && this.spawnTimer >= 1.08) {
@@ -105,6 +135,65 @@ export class GameManager extends Component {
         console.log(`Canvas size = ${this.canvasW} x ${this.canvasH}`);
     }
 
+    private preloadWalkFrames() {
+        let doneCount = 0;
+        const doneOne = () => {
+            doneCount++;
+            if (doneCount >= 2) {
+                this.walkFramesReady = true;
+                this.createTip('v0.2.11：白像素已处理，走路改为正常四帧循环');
+                console.log(`走路帧加载完成：basic=${this.basicWalkFrames.length}, shield=${this.shieldWalkFrames.length}`);
+            }
+        };
+
+        this.loadSpriteFrameList(
+            [
+                this.texturePath.enemy_basic_walk_0,
+                this.texturePath.enemy_basic_walk_1,
+                this.texturePath.enemy_basic_walk_2,
+                this.texturePath.enemy_basic_walk_3,
+            ],
+            frames => {
+                this.basicWalkFrames = frames;
+                doneOne();
+            }
+        );
+
+        this.loadSpriteFrameList(
+            [
+                this.texturePath.enemy_shield_walk_0,
+                this.texturePath.enemy_shield_walk_1,
+                this.texturePath.enemy_shield_walk_2,
+                this.texturePath.enemy_shield_walk_3,
+            ],
+            frames => {
+                this.shieldWalkFrames = frames;
+                doneOne();
+            }
+        );
+    }
+
+    private loadSpriteFrameList(paths: string[], done: (frames: SpriteFrame[]) => void) {
+        const frames: SpriteFrame[] = new Array(paths.length);
+        let remain = paths.length;
+
+        paths.forEach((p, index) => {
+            resources.load(`${p}/spriteFrame`, SpriteFrame, (err, spriteFrame) => {
+                remain--;
+
+                if (!err && spriteFrame) {
+                    frames[index] = spriteFrame;
+                } else {
+                    console.warn(`预加载走路帧失败：${p}/spriteFrame`);
+                }
+
+                if (remain <= 0) {
+                    done(frames.filter(Boolean));
+                }
+            });
+        });
+    }
+
     private setupScene() {
         this.clearChildren();
 
@@ -115,17 +204,21 @@ export class GameManager extends Component {
         this.waveLabel = null;
 
         this.createTitle();
+        this.createGroundScene();
         this.createGate();
         this.createSlots();
         this.createCharTiles();
-        this.createTip('v0.2：万箭齐发清怪，固若金汤加护盾');
+
+        if (this.walkFramesReady) {
+            this.createTip('v0.2.11：移除白色残影，修正脚步顺拐感');
+        } else {
+            this.createTip('正在加载走路动画帧...');
+        }
     }
 
     private clearChildren() {
         for (const child of [...this.node.children]) {
-            if (child.name === 'Camera') {
-                continue;
-            }
+            if (child.name === 'Camera') continue;
             child.destroy();
         }
     }
@@ -154,9 +247,64 @@ export class GameManager extends Component {
         ).getComponent(Label);
     }
 
+    private createGroundScene() {
+        const centerY = 8;
+
+        this.createGroundBand('ground_band_back', 0, centerY - 18, this.canvasW - 160, 118, new Color(35, 32, 24, 255));
+        this.createGroundBand('ground_band_mid', 0, centerY - 10, this.canvasW - 220, 86, new Color(62, 52, 38, 235));
+        this.createGroundBand('ground_band_front', 0, centerY, this.canvasW - 280, 54, new Color(96, 80, 54, 220));
+
+        const tileY = centerY + 2;
+        const startX = -this.canvasW / 2 + 180;
+        const gap = 112;
+
+        for (let i = 0; i < 9; i++) {
+            this.createImageNode(
+                `ground_tile_${i}`,
+                [this.texturePath.env_stone_path_tile],
+                startX + i * gap,
+                tileY,
+                110,
+                56,
+                '',
+                0
+            );
+        }
+
+        const gateX = this.getGateX();
+        this.createImageNode('ground_tile_gate_1', [this.texturePath.env_stone_path_tile], gateX - 58, tileY, 110, 56, '', 0);
+        this.createImageNode('ground_tile_gate_2', [this.texturePath.env_stone_path_tile], gateX + 54, tileY, 110, 56, '', 0);
+
+        this.createGroundShadow('gate_shadow', gateX, 0, 220, 36, new Color(0, 0, 0, 95));
+    }
+
+    private createGroundBand(name: string, x: number, y: number, w: number, h: number, color: Color) {
+        const node = new Node(name);
+        node.parent = this.node;
+        node.setPosition(x, y);
+        node.addComponent(UITransform).setContentSize(w, h);
+
+        const g = node.addComponent(Graphics);
+        g.fillColor = color;
+        g.roundRect(-w / 2, -h / 2, w, h, 18);
+        g.fill();
+    }
+
+    private createGroundShadow(name: string, x: number, y: number, w: number, h: number, color: Color) {
+        const node = new Node(name);
+        node.parent = this.node;
+        node.setPosition(x, y);
+        node.addComponent(UITransform).setContentSize(w, h);
+
+        const g = node.addComponent(Graphics);
+        g.fillColor = color;
+        g.ellipse(0, 0, w / 2, h / 2);
+        g.fill();
+    }
+
     private createGate() {
         const gateX = this.getGateX();
-        const gateY = 70;
+        const gateY = 74;
 
         this.createImageNode(
             'gate',
@@ -188,16 +336,12 @@ export class GameManager extends Component {
     }
 
     private getGateHpText() {
-        if (this.gateShield > 0) {
-            return `城门血量：${this.gateHp}  护盾：${this.gateShield}`;
-        }
+        if (this.gateShield > 0) return `城门血量：${this.gateHp}  护盾：${this.gateShield}`;
         return `城门血量：${this.gateHp}`;
     }
 
     private refreshGateHpLabel() {
-        if (this.gateHpLabel) {
-            this.gateHpLabel.string = this.getGateHpText();
-        }
+        if (this.gateHpLabel) this.gateHpLabel.string = this.getGateHpText();
     }
 
     private createSlots() {
@@ -224,9 +368,7 @@ export class GameManager extends Component {
 
     private createCharTiles() {
         for (const child of [...this.node.children]) {
-            if (child.name.startsWith('tile_')) {
-                child.destroy();
-            }
+            if (child.name.startsWith('tile_')) child.destroy();
         }
 
         const chars = ['万', '箭', '齐', '发', '固', '若', '金', '汤', '火', '土'];
@@ -235,12 +377,10 @@ export class GameManager extends Component {
             '箭': this.texturePath.tile_jian,
             '齐': this.texturePath.tile_qi,
             '发': this.texturePath.tile_fa,
-
             '固': this.texturePath.tile_gu,
             '若': this.texturePath.tile_ruo,
             '金': this.texturePath.tile_jin,
             '汤': this.texturePath.tile_tang,
-
             '火': this.texturePath.tile_huo,
             '土': this.texturePath.tile_tu,
         };
@@ -288,14 +428,10 @@ export class GameManager extends Component {
             }
         }
 
-        if (targetIndex < 0) {
-            return false;
-        }
+        if (targetIndex < 0) return false;
 
         const targetSlot = this.slots[targetIndex];
-        if (targetSlot.tile && targetSlot.tile !== tile) {
-            return false;
-        }
+        if (targetSlot.tile && targetSlot.tile !== tile) return false;
 
         if (tile.slotIndex >= 0 && this.slots[tile.slotIndex]) {
             this.slots[tile.slotIndex].tile = null;
@@ -312,19 +448,15 @@ export class GameManager extends Component {
 
     private checkIdiom() {
         const current = this.slots.map(s => s.char).join('');
-
-        if (current === '万箭齐发') {
-            this.releaseWanJianQiFa();
-        } else if (current === '固若金汤') {
-            this.releaseGuRuoJinTang();
-        }
+        if (current === '万箭齐发') this.releaseWanJianQiFa();
+        else if (current === '固若金汤') this.releaseGuRuoJinTang();
     }
 
     private releaseWanJianQiFa() {
         this.createFloatingText('万箭齐发！', 0, 90, new Color(255, 240, 120, 255));
         this.createTip('成语释放：万箭齐发，全屏清怪');
 
-        this.createImageNode(
+        const effect = this.createImageNode(
             'effect_arrow_rain',
             [this.texturePath.effect_arrow_rain],
             0,
@@ -335,15 +467,12 @@ export class GameManager extends Component {
             0
         );
 
-        const effect = this.node.getChildByName('effect_arrow_rain');
-        if (effect) {
-            tween(effect)
-                .to(0.16, { scale: new Vec3(1.15, 1.15, 1) })
-                .to(0.16, { scale: new Vec3(1, 1, 1) })
-                .delay(0.22)
-                .call(() => effect.destroy())
-                .start();
-        }
+        tween(effect)
+            .to(0.16, { scale: new Vec3(1.15, 1.15, 1) })
+            .to(0.16, { scale: new Vec3(1, 1, 1) })
+            .delay(0.22)
+            .call(() => effect.destroy())
+            .start();
 
         tween(this.node)
             .by(0.04, { position: new Vec3(8, 0, 0) })
@@ -352,9 +481,7 @@ export class GameManager extends Component {
             .start();
 
         for (const enemy of [...this.enemies]) {
-            if (enemy && enemy.node && enemy.node.isValid) {
-                enemy.takeDamage(9999);
-            }
+            if (enemy && enemy.node && enemy.node.isValid) enemy.takeDamage(9999);
         }
 
         this.clearSlotsAndRespawnTiles();
@@ -390,9 +517,7 @@ export class GameManager extends Component {
 
     private clearSlotsAndRespawnTiles() {
         for (const slot of this.slots) {
-            if (slot.tile && slot.tile.node && slot.tile.node.isValid) {
-                slot.tile.node.destroy();
-            }
+            if (slot.tile && slot.tile.node && slot.tile.node.isValid) slot.tile.node.destroy();
             slot.char = '';
             slot.tile = null;
         }
@@ -401,37 +526,84 @@ export class GameManager extends Component {
 
     private spawnEnemy() {
         const startX = -this.canvasW / 2 + 120;
-        const y = 70 + Math.random() * 145 - 72;
+        const lanes = [-22, -6, 10, 26, 42];
+        const y = lanes[Math.floor(Math.random() * lanes.length)];
 
         const isShieldEnemy = this.spawnedCount > 0 && this.spawnedCount % 5 === 0;
         const enemyName = isShieldEnemy ? 'enemy_shield' : 'enemy_basic';
 
-        const enemyNode = this.createImageNode(
-            `${enemyName}_${this.spawnedCount}`,
-            isShieldEnemy
-                ? [this.texturePath.enemy_shield_soldier, this.texturePath.enemy_basic_soldier, this.texturePath.enemy_bing_fallback]
-                : [this.texturePath.enemy_basic_soldier, this.texturePath.enemy_bing_fallback],
-            startX,
-            y,
-            isShieldEnemy ? 78 : 70,
-            isShieldEnemy ? 78 : 70,
-            '兵',
-            28
-        );
+        let enemyNode: Node;
+        let spriteRoot: Node | null = null;
+        let frameNodes: Node[] = [];
+
+        if (isShieldEnemy && this.shieldWalkFrames.length >= 2) {
+            const data = this.createAnimatedEnemyNode(`${enemyName}_${this.spawnedCount}`, this.shieldWalkFrames, startX, y, 88, 88);
+            enemyNode = data.node;
+            spriteRoot = data.spriteRoot;
+            frameNodes = data.frames;
+        } else if (!isShieldEnemy && this.basicWalkFrames.length >= 2) {
+            const data = this.createAnimatedEnemyNode(`${enemyName}_${this.spawnedCount}`, this.basicWalkFrames, startX, y, 82, 82);
+            enemyNode = data.node;
+            spriteRoot = data.spriteRoot;
+            frameNodes = data.frames;
+        } else {
+            enemyNode = this.createImageNode(
+                `${enemyName}_${this.spawnedCount}`,
+                isShieldEnemy
+                    ? [this.texturePath.enemy_shield_soldier, this.texturePath.enemy_basic_soldier]
+                    : [this.texturePath.enemy_basic_soldier, this.texturePath.enemy_bing_fallback],
+                startX,
+                y,
+                isShieldEnemy ? 88 : 82,
+                isShieldEnemy ? 88 : 82,
+                '兵',
+                28
+            );
+        }
 
         const enemy = enemyNode.addComponent(Enemy);
-        if (isShieldEnemy) {
-            enemy.init(34 + Math.random() * 8, 3, 1, this.getEnemyHitX());
-        } else {
-            enemy.init(45 + Math.random() * 18, 1, 1, this.getEnemyHitX());
+
+        if (frameNodes.length > 0 && spriteRoot) {
+            enemy.setAnimatedNodes(spriteRoot, frameNodes, 4);
         }
+
+        if (isShieldEnemy) enemy.init(34 + Math.random() * 8, 3, 1, this.getEnemyHitX());
+        else enemy.init(45 + Math.random() * 18, 1, 1, this.getEnemyHitX());
 
         this.enemies.push(enemy);
         this.spawnedCount++;
 
-        if (this.waveLabel) {
-            this.waveLabel.string = `敌人：${this.spawnedCount}/${this.totalEnemies}`;
+        if (this.waveLabel) this.waveLabel.string = `敌人：${this.spawnedCount}/${this.totalEnemies}`;
+    }
+
+    private createAnimatedEnemyNode(name: string, frames: SpriteFrame[], x: number, y: number, w: number, h: number): AnimatedEnemyNode {
+        const node = new Node(name);
+        node.parent = this.node;
+        node.setPosition(x, y);
+        node.addComponent(UITransform).setContentSize(w, h);
+
+        const spriteRoot = new Node(`${name}_sprite_root`);
+        spriteRoot.parent = node;
+        spriteRoot.setPosition(0, 0, 0);
+        spriteRoot.addComponent(UITransform).setContentSize(w, h);
+
+        const frameNodes: Node[] = [];
+
+        for (let i = 0; i < frames.length; i++) {
+            const frameNode = new Node(`${name}_frame_${i}`);
+            frameNode.parent = spriteRoot;
+            frameNode.setPosition(0, 0);
+            frameNode.addComponent(UITransform).setContentSize(w, h);
+
+            const sprite = frameNode.addComponent(Sprite);
+            sprite.spriteFrame = frames[i];
+            sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+
+            frameNode.active = i === 0;
+            frameNodes.push(frameNode);
         }
+
+        return { node, spriteRoot, frames: frameNodes };
     }
 
     public removeEnemy(enemy: Enemy, killed: boolean) {
@@ -444,7 +616,6 @@ export class GameManager extends Component {
         if (this.gameOver) return;
 
         const damage = enemy.damage || 1;
-
         this.removeEnemy(enemy, false);
         enemy.node.destroy();
 
@@ -452,9 +623,7 @@ export class GameManager extends Component {
             const absorb = Math.min(this.gateShield, damage);
             this.gateShield -= absorb;
             const remain = damage - absorb;
-            if (remain > 0) {
-                this.gateHp -= remain;
-            }
+            if (remain > 0) this.gateHp -= remain;
             this.createTip(`护盾抵挡了 ${absorb} 点伤害`);
         } else {
             this.gateHp -= damage;
@@ -462,13 +631,8 @@ export class GameManager extends Component {
 
         this.refreshGateHpLabel();
 
-        if (this.gateHp <= 4) {
-            this.createTip('城门危急！快拼成语救场');
-        }
-
-        if (this.gateHp <= 0) {
-            this.showResult('城门被破！点击重新开始', false);
-        }
+        if (this.gateHp <= 4) this.createTip('城门危急！快拼成语救场');
+        if (this.gateHp <= 0) this.showResult('城门被破！点击重新开始', false);
     }
 
     private showResult(msg: string, success: boolean) {
@@ -477,16 +641,7 @@ export class GameManager extends Component {
 
         let panel: Node;
         if (!success) {
-            panel = this.createImageNode(
-                'result',
-                [this.texturePath.fail_popup],
-                0,
-                0,
-                560,
-                220,
-                msg,
-                32
-            );
+            panel = this.createImageNode('result', [this.texturePath.fail_popup], 0, 0, 560, 220, msg, 32);
         } else {
             panel = this.createBox('result', 0, 0, 560, 185, new Color(40, 45, 55, 240), '', 34);
             this.createText('result_text', msg, 0, 0, 34, new Color(255, 240, 180, 255));
@@ -596,14 +751,14 @@ export class GameManager extends Component {
 
             if (!spriteNode || !spriteNode.isValid) return;
 
-            const sprite = spriteNode.addComponent(Sprite);
+            let sprite = spriteNode.getComponent(Sprite);
+            if (!sprite) sprite = spriteNode.addComponent(Sprite);
+
             sprite.spriteFrame = spriteFrame;
             sprite.sizeMode = Sprite.SizeMode.CUSTOM;
 
             const ui = spriteNode.getComponent(UITransform);
-            if (ui) {
-                ui.setContentSize(w, h);
-            }
+            if (ui) ui.setContentSize(w, h);
         });
     }
 
@@ -637,7 +792,6 @@ export class GameManager extends Component {
         const node = new Node(name);
         node.parent = this.node;
         node.setPosition(x, y);
-
         node.addComponent(UITransform).setContentSize(w, h);
 
         const bgNode = new Node(`${name}_bg`);
