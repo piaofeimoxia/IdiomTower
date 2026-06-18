@@ -69,7 +69,7 @@ export class GameManager extends Component {
         },
         {
             name: '第 3 关',
-            desc: '加入骑兵：源图特大号，显示166x132',
+            desc: '加入骑兵：特大号最终尺寸，保留白块修复',
             totalEnemies: 20,
             gateHp: 12,
             shieldEvery: 5,
@@ -142,7 +142,7 @@ export class GameManager extends Component {
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.3.9 启动：骑兵源图尺寸档位 特大号');
+        console.log('成语塔防 Demo v0.3.10 启动：骑兵特大号最终版');
         GameManager.inst = this;
         this.readCanvasSize();
         this.preloadWalkFrames();
