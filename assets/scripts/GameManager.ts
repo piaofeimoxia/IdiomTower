@@ -61,6 +61,7 @@ export class GameManager extends Component {
     private gateHpRewardBonus = 0;
     private shieldRewardBonus = 0;
     private wanJianCooldownReduce = 0;
+    private cageFreezeBonus = 0;
     private rewardChoiceLocked = false;
 
     private currentLevelIndex = 0;
@@ -166,7 +167,7 @@ export class GameManager extends Component {
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.4.6 启动：新成语「画地为牢」定身技能版');
+        console.log('成语塔防 Demo v0.4.7 启动：画地为牢奖励联动版');
         GameManager.inst = this;
         this.readCanvasSize();
         this.preloadWalkFrames();
@@ -370,7 +371,7 @@ export class GameManager extends Component {
     }
 
     private hasAnyReward() {
-        return this.gateHpRewardBonus > 0 || this.shieldRewardBonus > 0 || this.wanJianCooldownReduce > 0;
+        return this.gateHpRewardBonus > 0 || this.shieldRewardBonus > 0 || this.wanJianCooldownReduce > 0 || this.cageFreezeBonus > 0;
     }
 
     private getRewardStatusText() {
@@ -380,6 +381,7 @@ export class GameManager extends Component {
         if (this.gateHpRewardBonus > 0) parts.push(`城门+${this.gateHpRewardBonus}`);
         if (this.shieldRewardBonus > 0) parts.push(`护盾+${this.shieldRewardBonus}`);
         if (this.wanJianCooldownReduce > 0) parts.push(`箭雨-${this.wanJianCooldownReduce}s`);
+        if (this.cageFreezeBonus > 0) parts.push(`牢笼+${this.cageFreezeBonus}s`);
         return `强化：${parts.join('｜')}`;
     }
 
@@ -390,6 +392,7 @@ export class GameManager extends Component {
         if (this.gateHpRewardBonus > 0) parts.push(`城门修复 +${this.gateHpRewardBonus}`);
         if (this.shieldRewardBonus > 0) parts.push(`护盾强化 +${this.shieldRewardBonus}`);
         if (this.wanJianCooldownReduce > 0) parts.push(`箭雨冷却 -${this.wanJianCooldownReduce}秒`);
+        if (this.cageFreezeBonus > 0) parts.push(`牢笼定身 +${this.cageFreezeBonus}秒`);
         return parts.join('，');
     }
 
@@ -515,6 +518,10 @@ export class GameManager extends Component {
         return this.currentLevel.gateHp + this.gateHpRewardBonus;
     }
 
+    private getHuaDiFreezeSeconds() {
+        return this.huaDiFreezeSeconds + this.cageFreezeBonus;
+    }
+
     private getWanJianCooldown() {
         return Math.max(3, this.wanJianCooldown - this.wanJianCooldownReduce);
     }
@@ -523,6 +530,7 @@ export class GameManager extends Component {
         this.gateHpRewardBonus = 0;
         this.shieldRewardBonus = 0;
         this.wanJianCooldownReduce = 0;
+        this.cageFreezeBonus = 0;
         this.rewardChoiceLocked = false;
     }
 
@@ -751,14 +759,16 @@ export class GameManager extends Component {
     private releaseHuaDiWeiLao() {
         this.huaDiCooldownRemain = this.huaDiCooldown;
 
+        const freezeSeconds = this.getHuaDiFreezeSeconds();
+
         this.createFloatingText('画地为牢！', 0, 95, new Color(145, 220, 255, 255));
-        this.createTip(`成语释放：画地为牢，敌人定身 ${this.huaDiFreezeSeconds} 秒，冷却 ${this.huaDiCooldown} 秒`);
+        this.createTip(`成语释放：画地为牢，敌人定身 ${freezeSeconds} 秒，冷却 ${this.huaDiCooldown} 秒`);
 
         this.createFreezeFieldEffect();
 
         for (const enemy of [...this.enemies]) {
             if (enemy && enemy.node && enemy.node.isValid) {
-                enemy.freeze(this.huaDiFreezeSeconds);
+                enemy.freeze(freezeSeconds);
             }
         }
 
@@ -1108,57 +1118,78 @@ export class GameManager extends Component {
 
         this.createText(
             'reward_subtitle',
-            '奖励会在后续关卡生效',
+            '四选三随机出现，奖励会在后续关卡生效',
             0,
             96,
             20,
             new Color(190, 220, 235, 255)
         );
 
-        this.createRewardCard(
-            'reward_gate',
-            -245,
-            -18,
-            '城门修复',
-            '后续关卡城门血量 +3',
-            () => {
-                if (this.rewardChoiceLocked) return;
-                this.rewardChoiceLocked = true;
-                this.gateHpRewardBonus += 3;
-                this.refreshRewardStatusBar();
-                this.showRewardPickedFeedback('已选择：城门修复', '后续关卡城门血量 +3');
+        const rewardCards = [
+            {
+                name: 'reward_gate',
+                title: '城门修复',
+                desc: '后续关卡城门血量 +3',
+                pick: () => {
+                    this.gateHpRewardBonus += 3;
+                    this.showRewardPickedFeedback('已选择：城门修复', '后续关卡城门血量 +3');
+                }
+            },
+            {
+                name: 'reward_shield',
+                title: '护盾强化',
+                desc: '固若金汤护盾 +2',
+                pick: () => {
+                    this.shieldRewardBonus += 2;
+                    this.showRewardPickedFeedback('已选择：护盾强化', '固若金汤护盾 +2');
+                }
+            },
+            {
+                name: 'reward_arrow',
+                title: '箭雨强化',
+                desc: '万箭齐发冷却 -1秒',
+                pick: () => {
+                    this.wanJianCooldownReduce = Math.min(2, this.wanJianCooldownReduce + 1);
+                    this.showRewardPickedFeedback('已选择：箭雨强化', '万箭齐发冷却 -1 秒');
+                }
+            },
+            {
+                name: 'reward_cage',
+                title: '牢笼强化',
+                desc: '画地为牢定身 +1秒',
+                pick: () => {
+                    this.cageFreezeBonus += 1;
+                    this.showRewardPickedFeedback('已选择：牢笼强化', '画地为牢定身 +1 秒');
+                }
             }
-        );
+        ];
 
-        this.createRewardCard(
-            'reward_shield',
-            0,
-            -18,
-            '护盾强化',
-            '固若金汤护盾 +2',
-            () => {
-                if (this.rewardChoiceLocked) return;
-                this.rewardChoiceLocked = true;
-                this.shieldRewardBonus += 2;
-                this.refreshRewardStatusBar();
-                this.showRewardPickedFeedback('已选择：护盾强化', '固若金汤护盾 +2');
-            }
-        );
+        for (let i = rewardCards.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const temp = rewardCards[i];
+            rewardCards[i] = rewardCards[j];
+            rewardCards[j] = temp;
+        }
 
-        this.createRewardCard(
-            'reward_arrow',
-            245,
-            -18,
-            '箭雨强化',
-            '万箭齐发冷却 -1秒',
-            () => {
-                if (this.rewardChoiceLocked) return;
-                this.rewardChoiceLocked = true;
-                this.wanJianCooldownReduce = Math.min(2, this.wanJianCooldownReduce + 1);
-                this.refreshRewardStatusBar();
-                this.showRewardPickedFeedback('已选择：箭雨强化', '万箭齐发冷却 -1 秒');
-            }
-        );
+        const xList = [-245, 0, 245];
+        const selectedCards = rewardCards.slice(0, 3);
+
+        for (let i = 0; i < selectedCards.length; i++) {
+            const card = selectedCards[i];
+            this.createRewardCard(
+                card.name,
+                xList[i],
+                -18,
+                card.title,
+                card.desc,
+                () => {
+                    if (this.rewardChoiceLocked) return;
+                    this.rewardChoiceLocked = true;
+                    card.pick();
+                    this.refreshRewardStatusBar();
+                }
+            );
+        }
 
         this.createResultButton('reward_retry_btn', '重玩本关', -120, -154, 180, 46, () => this.restartCurrentLevel(), new Color(72, 82, 100, 235));
         this.createResultButton('reward_select_btn', '返回选关', 120, -154, 180, 46, () => this.returnToLevelSelect(), new Color(82, 72, 106, 235));
