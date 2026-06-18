@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Graphics, Color, UITransform } from 'cc';
+import { _decorator, Component, Node, Graphics, Color, UITransform, tween, Vec3, Sprite } from 'cc';
 import { GameManager } from './GameManager';
 
 const { ccclass } = _decorator;
@@ -111,6 +111,30 @@ export class Enemy extends Component {
         }
     }
 
+
+    private playHitFeedback() {
+        if (this.spriteRoot && this.spriteRoot.isValid) {
+            for (const frame of this.frameNodes) {
+                if (!frame || !frame.isValid) continue;
+                const sprite = frame.getComponent(Sprite);
+                if (sprite) sprite.color = new Color(255, 245, 190, 255);
+            }
+
+            this.scheduleOnce(() => {
+                for (const frame of this.frameNodes) {
+                    if (!frame || !frame.isValid) continue;
+                    const sprite = frame.getComponent(Sprite);
+                    if (sprite) sprite.color = Color.WHITE;
+                }
+            }, 0.08);
+        }
+
+        tween(this.node)
+            .to(0.045, { scale: new Vec3(1.08, 1.08, 1) })
+            .to(0.075, { scale: new Vec3(1, 1, 1) })
+            .start();
+    }
+
     update(dt: number) {
         if (this.dead) return;
 
@@ -136,11 +160,20 @@ export class Enemy extends Component {
 
     public takeDamage(damage: number) {
         if (this.dead) return;
+
         this.hp -= damage;
-        if (this.hp <= 0) {
+        const killed = this.hp <= 0;
+        const p = this.node.position;
+
+        this.playHitFeedback();
+        GameManager.inst.showEnemyHitFeedback(p.x, p.y, damage, killed);
+
+        if (killed) {
             this.dead = true;
             GameManager.inst.removeEnemy(this, true);
-            this.node.destroy();
+            this.scheduleOnce(() => {
+                if (this.node && this.node.isValid) this.node.destroy();
+            }, 0.04);
         }
     }
 }

@@ -47,6 +47,7 @@ export class GameManager extends Component {
     private waveRunning = true;
     private gameOver = false;
     private walkFramesReady = false;
+    private lastCavalryAlertSpawn = -999;
 
     private currentLevelIndex = 0;
 
@@ -142,7 +143,7 @@ export class GameManager extends Component {
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.4.0 启动：关卡胜负流程版');
+        console.log('成语塔防 Demo v0.4.1 启动：受击反馈 + 骑兵来袭提示');
         GameManager.inst = this;
         this.readCanvasSize();
         this.preloadWalkFrames();
@@ -643,6 +644,10 @@ export class GameManager extends Component {
         const kind = this.pickEnemyKind();
         const enemyName = `enemy_${kind}`;
 
+        if (kind === 'cavalry') {
+            this.showCavalryAlert();
+        }
+
         let enemyNode: Node;
         let spriteRoot: Node | null = null;
         let frameNodes: Node[] = [];
@@ -771,6 +776,62 @@ export class GameManager extends Component {
         if (this.gateHp <= 0) this.showResult('城门被破！', false);
     }
 
+
+    public showEnemyHitFeedback(x: number, y: number, damage: number, killed: boolean) {
+        const color = killed ? new Color(255, 220, 110, 255) : new Color(255, 245, 220, 255);
+        const text = killed ? '击破' : `-${damage}`;
+        this.createFloatingText(text, x, y + 50, color);
+
+        if (killed) {
+            this.createHitBurst(x, y + 24, new Color(255, 190, 90, 220), 46);
+        } else {
+            this.createHitBurst(x, y + 22, new Color(255, 255, 255, 145), 26);
+        }
+    }
+
+    private createHitBurst(x: number, y: number, color: Color, size: number) {
+        const node = new Node('hit_burst');
+        node.parent = this.node;
+        node.setPosition(x, y);
+        node.addComponent(UITransform).setContentSize(size, size);
+
+        const g = node.addComponent(Graphics);
+        g.fillColor = color;
+        g.circle(0, 0, size / 2);
+        g.fill();
+
+        tween(node)
+            .to(0.10, { scale: new Vec3(1.25, 1.25, 1) })
+            .to(0.12, { scale: new Vec3(0.1, 0.1, 1) })
+            .call(() => node.destroy())
+            .start();
+    }
+
+    private showCavalryAlert() {
+        // 骑兵每隔一段刷怪再提示，避免连续刷屏。
+        if (this.spawnedCount - this.lastCavalryAlertSpawn < 3) return;
+        this.lastCavalryAlertSpawn = this.spawnedCount;
+
+        const y = this.canvasH / 2 - 182;
+        const banner = this.createBox('cavalry_alert_banner', 0, y, 320, 48, new Color(130, 54, 42, 235), '骑兵来袭！', 26);
+
+        this.createTip('骑兵速度更快，优先用「万箭齐发」清场');
+
+        tween(banner)
+            .to(0.08, { scale: new Vec3(1.12, 1.12, 1) })
+            .to(0.10, { scale: new Vec3(1, 1, 1) })
+            .delay(0.75)
+            .to(0.16, { scale: new Vec3(0.85, 0.85, 1) })
+            .call(() => banner.destroy())
+            .start();
+
+        tween(this.node)
+            .by(0.035, { position: new Vec3(5, 0, 0) })
+            .by(0.035, { position: new Vec3(-10, 0, 0) })
+            .by(0.035, { position: new Vec3(5, 0, 0) })
+            .start();
+    }
+
     private showResult(msg: string, success: boolean) {
         if (this.gameOver) return;
 
@@ -858,6 +919,7 @@ export class GameManager extends Component {
         this.spawnedCount = 0;
         this.killedCount = 0;
         this.spawnTimer = 0;
+        this.lastCavalryAlertSpawn = -999;
         this.enemies = [];
         this.gameOver = false;
         this.waveRunning = true;
@@ -886,6 +948,7 @@ export class GameManager extends Component {
         this.spawnedCount = 0;
         this.killedCount = 0;
         this.spawnTimer = 0;
+        this.lastCavalryAlertSpawn = -999;
         this.enemies = [];
         this.gameOver = false;
         this.waveRunning = false;
