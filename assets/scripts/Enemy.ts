@@ -1,7 +1,9 @@
-import { _decorator, Component, Node, Graphics, Color, UITransform, tween, Vec3, Sprite } from 'cc';
+import { _decorator, Component, Node, Color, UITransform, tween, Vec3, Sprite, Graphics } from 'cc';
 import { GameManager } from './GameManager';
 
 const { ccclass } = _decorator;
+
+type ArcherState = 'walk' | 'raise' | 'draw' | 'full' | 'release' | 'recover' | 'cooldown';
 
 @ccclass('Enemy')
 export class Enemy extends Component {
@@ -14,21 +16,25 @@ export class Enemy extends Component {
     private frozenTimer = 0;
     private rangedAttack = false;
     private rangedAttackX = 0;
-    private rangedAttackInterval = 2.2;
+    private rangedAttackInterval = 1.6;
     private isRangedStopped = false;
 
     private spriteRoot: Node | null = null;
     private frameNodes: Node[] = [];
+    private archerActionNodes: Node[] = [];
     private shadowNode: Node | null = null;
 
     private animTimer = 0;
     private seqIndex = 0;
     private motionType: 'basic' | 'shield' | 'cavalry' | 'archer' = 'basic';
 
-    private archerState: 'walk' | 'aim' | 'shoot' | 'cooldown' = 'walk';
+    private archerState: ArcherState = 'walk';
     private archerStateTimer = 0;
-    private archerAimDuration = 0.18;
-    private archerShootDuration = 0.12;
+    private readonly archerRaiseDuration = 0.10;
+    private readonly archerDrawDuration = 0.12;
+    private readonly archerFullDuration = 0.14;
+    private readonly archerReleaseDuration = 0.08;
+    private readonly archerRecoverDuration = 0.14;
 
     // 普通兵：用 3 姿态往返循环，避开最别扭的一帧，让走路更顺眼
     private readonly basicSequence = [0, 1, 2, 1];
@@ -55,9 +61,16 @@ export class Enemy extends Component {
         this.applyFramePose();
     }
 
-    public setAnimatedNodes(spriteRoot: Node, frameNodes: Node[], _fps = 4, motionType: 'basic' | 'shield' | 'cavalry' | 'archer' = 'basic') {
+    public setAnimatedNodes(
+        spriteRoot: Node,
+        frameNodes: Node[],
+        _fps = 4,
+        motionType: 'basic' | 'shield' | 'cavalry' | 'archer' = 'basic',
+        archerActionNodes: Node[] = []
+    ) {
         this.spriteRoot = spriteRoot;
         this.frameNodes = frameNodes || [];
+        this.archerActionNodes = archerActionNodes || [];
         this.motionType = motionType;
         const seq = this.getSequence();
         this.seqIndex = this.motionType === 'archer'
@@ -85,14 +98,16 @@ export class Enemy extends Component {
         return this.basicDurations;
     }
 
+    private getAllFrameNodes() {
+        return [...this.frameNodes, ...this.archerActionNodes];
+    }
+
     private createShadow() {
         this.shadowNode = new Node('enemy_shadow');
         this.shadowNode.parent = this.node;
         this.shadowNode.setSiblingIndex(0);
 
         const isCavalry = this.motionType === 'cavalry';
-        const isArcher = this.motionType === 'archer';
-        // 弓兵也使用步兵式贴地阴影，不再额外抬高，避免视觉上像飘着走。
         this.shadowNode.setPosition(0, isCavalry ? -36 : -24);
 
         const ui = this.shadowNode.addComponent(UITransform);
@@ -104,25 +119,42 @@ export class Enemy extends Component {
         g.fill();
     }
 
+    private setActiveFrameGroup(activeGroup: Node[], activeIndex: number) {
+        const all = this.getAllFrameNodes();
+        for (const n of all) {
+            if (n && n.isValid) n.active = false;
+        }
+        if (activeGroup.length <= 0) return;
+        const idx = Math.max(0, Math.min(activeIndex, activeGroup.length - 1));
+        const node = activeGroup[idx];
+        if (node && node.isValid) node.active = true;
+    }
+
+    private getArcherActionFrameIndex() {
+        switch (this.archerState) {
+            case 'raise': return 1;
+            case 'draw': return 2;
+            case 'full': return 3;
+            case 'release': return 4;
+            case 'recover': return 5;
+            case 'cooldown': return 5;
+            default: return 0;
+        }
+    }
+
     private applyFramePose() {
         if (this.frameNodes.length <= 0) return;
 
         const seq = this.getSequence();
         let frameIndex = seq[this.seqIndex % seq.length] ?? 0;
+        let usingArcherAction = false;
 
-        if (this.motionType === 'archer' && this.isRangedStopped) {
-            if (this.archerState === 'aim') {
-                frameIndex = 1;
-            } else if (this.archerState === 'shoot') {
-                frameIndex = 3;
-            } else if (this.archerState === 'cooldown') {
-                frameIndex = 2;
-            }
-        }
-
-        for (let i = 0; i < this.frameNodes.length; i++) {
-            const f = this.frameNodes[i];
-            if (f && f.isValid) f.active = i === frameIndex;
+        if (this.motionType === 'archer' && this.isRangedStopped && this.archerActionNodes.length > 0) {
+            usingArcherAction = true;
+            const actionIndex = this.getArcherActionFrameIndex();
+            this.setActiveFrameGroup(this.archerActionNodes, actionIndex);
+        } else {
+            this.setActiveFrameGroup(this.frameNodes, frameIndex);
         }
 
         if (this.spriteRoot && this.spriteRoot.isValid) {
@@ -132,11 +164,18 @@ export class Enemy extends Component {
             if (this.motionType === 'cavalry') {
                 yOffset = 0;
             } else if (this.motionType === 'archer') {
-                if (!this.isRangedStopped) {
-                    // 弓兵走路阶段改为与盾兵相同的贴地步态逻辑。
+                if (!usingArcherAction) {
                     yOffset = (frameIndex === 1 || frameIndex === 3) ? 1 : 0;
-                } else if (this.archerState === 'shoot') {
-                    xOffset = 1;
+                } else {
+                    switch (this.archerState) {
+                        case 'raise': xOffset = -1; break;
+                        case 'draw': xOffset = 0; break;
+                        case 'full': xOffset = 1; break;
+                        case 'release': xOffset = 2; break;
+                        case 'recover': xOffset = 0; break;
+                        case 'cooldown': xOffset = 0; break;
+                    }
+                    yOffset = 0;
                 }
             } else {
                 yOffset = (frameIndex === 1 || frameIndex === 3) ? 1 : 0;
@@ -150,13 +189,10 @@ export class Enemy extends Component {
             if (this.motionType === 'cavalry') {
                 scaleX = (frameIndex === 1 || frameIndex === 3) ? 0.97 : 1.02;
             } else if (this.motionType === 'archer') {
-                if (!this.isRangedStopped) {
-                    // 弓兵走路时阴影缩放也与盾兵一致。
+                if (!usingArcherAction) {
                     scaleX = (frameIndex === 1 || frameIndex === 3) ? 0.92 : 1.0;
-                } else if (this.archerState === 'shoot') {
-                    scaleX = 0.92;
                 } else {
-                    scaleX = 0.98;
+                    scaleX = this.archerState === 'release' ? 0.95 : 0.98;
                 }
             } else {
                 scaleX = (frameIndex === 1 || frameIndex === 3) ? 0.92 : 1.0;
@@ -167,7 +203,7 @@ export class Enemy extends Component {
 
     public setRangedAttack(attackX: number, interval = 2.2) {
         this.rangedAttack = true;
-        this.rangedAttackX = attackX;
+        this.rangedAttackX = Math.floor(attackX);
         this.rangedAttackInterval = interval;
         this.isRangedStopped = false;
         this.archerState = 'walk';
@@ -179,7 +215,7 @@ export class Enemy extends Component {
 
         this.frozenTimer = Math.max(this.frozenTimer, seconds);
 
-        for (const frame of this.frameNodes) {
+        for (const frame of this.getAllFrameNodes()) {
             if (!frame || !frame.isValid) continue;
             const sprite = frame.getComponent(Sprite);
             if (sprite) sprite.color = new Color(150, 210, 255, 255);
@@ -191,7 +227,7 @@ export class Enemy extends Component {
     }
 
     private clearFreezeVisual() {
-        for (const frame of this.frameNodes) {
+        for (const frame of this.getAllFrameNodes()) {
             if (!frame || !frame.isValid) continue;
             const sprite = frame.getComponent(Sprite);
             if (sprite) sprite.color = Color.WHITE;
@@ -204,14 +240,14 @@ export class Enemy extends Component {
 
     private playHitFeedback() {
         if (this.spriteRoot && this.spriteRoot.isValid) {
-            for (const frame of this.frameNodes) {
+            for (const frame of this.getAllFrameNodes()) {
                 if (!frame || !frame.isValid) continue;
                 const sprite = frame.getComponent(Sprite);
                 if (sprite) sprite.color = new Color(255, 245, 190, 255);
             }
 
             this.scheduleOnce(() => {
-                for (const frame of this.frameNodes) {
+                for (const frame of this.getAllFrameNodes()) {
                     if (!frame || !frame.isValid) continue;
                     const sprite = frame.getComponent(Sprite);
                     if (sprite) {
@@ -276,7 +312,7 @@ export class Enemy extends Component {
         if (!this.isRangedStopped) {
             if (p.x >= this.rangedAttackX) {
                 this.isRangedStopped = true;
-                this.archerState = 'aim';
+                this.archerState = 'raise';
                 this.archerStateTimer = 0;
                 this.node.setPosition(this.rangedAttackX, p.y, p.z);
                 this.seqIndex = 1;
@@ -293,9 +329,27 @@ export class Enemy extends Component {
 
         this.archerStateTimer += dt;
 
-        if (this.archerState === 'aim') {
-            if (this.archerStateTimer >= this.archerAimDuration) {
-                this.archerState = 'shoot';
+        if (this.archerState === 'raise') {
+            if (this.archerStateTimer >= this.archerRaiseDuration) {
+                this.archerState = 'draw';
+                this.archerStateTimer = 0;
+                this.applyFramePose();
+            }
+            return;
+        }
+
+        if (this.archerState === 'draw') {
+            if (this.archerStateTimer >= this.archerDrawDuration) {
+                this.archerState = 'full';
+                this.archerStateTimer = 0;
+                this.applyFramePose();
+            }
+            return;
+        }
+
+        if (this.archerState === 'full') {
+            if (this.archerStateTimer >= this.archerFullDuration) {
+                this.archerState = 'release';
                 this.archerStateTimer = 0;
                 this.applyFramePose();
                 this.playRangedAttackPose();
@@ -304,8 +358,17 @@ export class Enemy extends Component {
             return;
         }
 
-        if (this.archerState === 'shoot') {
-            if (this.archerStateTimer >= this.archerShootDuration) {
+        if (this.archerState === 'release') {
+            if (this.archerStateTimer >= this.archerReleaseDuration) {
+                this.archerState = 'recover';
+                this.archerStateTimer = 0;
+                this.applyFramePose();
+            }
+            return;
+        }
+
+        if (this.archerState === 'recover') {
+            if (this.archerStateTimer >= this.archerRecoverDuration) {
                 this.archerState = 'cooldown';
                 this.archerStateTimer = 0;
                 this.applyFramePose();
@@ -315,7 +378,7 @@ export class Enemy extends Component {
 
         if (this.archerState === 'cooldown') {
             if (this.archerStateTimer >= this.rangedAttackInterval) {
-                this.archerState = 'aim';
+                this.archerState = 'raise';
                 this.archerStateTimer = 0;
                 this.applyFramePose();
             }
@@ -325,8 +388,8 @@ export class Enemy extends Component {
     private playRangedAttackPose() {
         if (this.motionType === 'archer') {
             tween(this.node)
-                .to(0.04, { scale: new Vec3(1.04, 0.98, 1) })
-                .to(0.08, { scale: new Vec3(1, 1, 1) })
+                .to(0.05, { scale: new Vec3(1.06, 0.97, 1) })
+                .to(0.10, { scale: new Vec3(1, 1, 1) })
                 .start();
             return;
         }

@@ -1,0 +1,134 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "df92a2ed-20c8-4afe-a18b-2295c471f19e",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "df92a2ed-20c8-4afe-a18b-2295c471f19e@6c48a",
+      "displayName": "enemy_archer_shoot_1",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "clamp-to-edge",
+        "wrapModeT": "clamp-to-edge",
+        "imageUuidOrDatabaseUri": "df92a2ed-20c8-4afe-a18b-2295c471f19e",
+        "isUuid": true,
+        "visible": false,
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f9941": {
+      "importer": "sprite-frame",
+      "uuid": "df92a2ed-20c8-4afe-a18b-2295c471f19e@f9941",
+      "displayName": "enemy_archer_shoot_1",
+      "id": "f9941",
+      "name": "spriteFrame",
+      "userData": {
+        "trimThreshold": 1,
+        "rotated": false,
+        "offsetX": 0,
+        "offsetY": 0,
+        "trimX": 15,
+        "trimY": 6,
+        "width": 62,
+        "height": 80,
+        "rawWidth": 92,
+        "rawHeight": 92,
+        "borderTop": 0,
+        "borderBottom": 0,
+        "borderLeft": 0,
+        "borderRight": 0,
+        "packable": true,
+        "pixelsToUnit": 100,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "meshType": 0,
+        "vertices": {
+          "rawPosition": [
+            -31,
+            -40,
+            0,
+            31,
+            -40,
+            0,
+            -31,
+            40,
+            0,
+            31,
+            40,
+            0
+          ],
+          "indexes": [
+            0,
+            1,
+            2,
+            2,
+            1,
+            3
+          ],
+          "uv": [
+            15,
+            86,
+            77,
+            86,
+            15,
+            6,
+            77,
+            6
+          ],
+          "nuv": [
+            0.16304347826086957,
+            0.06521739130434782,
+            0.8369565217391305,
+            0.06521739130434782,
+            0.16304347826086957,
+            0.9347826086956522,
+            0.8369565217391305,
+            0.9347826086956522
+          ],
+          "minPos": [
+            -31,
+            -40,
+            0
+          ],
+          "maxPos": [
+            31,
+            40,
+            0
+          ]
+        },
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "df92a2ed-20c8-4afe-a18b-2295c471f19e@6c48a",
+        "atlasUuid": "",
+        "trimType": "auto"
+      },
+      "ver": "1.0.12",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "sprite-frame",
+    "fixAlphaTransparencyArtifacts": false,
+    "hasAlpha": true,
+    "redirect": "df92a2ed-20c8-4afe-a18b-2295c471f19e@6c48a"
+  }
+}
