@@ -58,6 +58,7 @@ export class GameManager extends Component {
     private gateHpRewardBonus = 0;
     private shieldRewardBonus = 0;
     private wanJianCooldownReduce = 0;
+    private rewardChoiceLocked = false;
 
     private currentLevelIndex = 0;
 
@@ -98,6 +99,7 @@ export class GameManager extends Component {
     private gateHpLabel: Label | null = null;
     private waveLabel: Label | null = null;
     private tipLabel: Label | null = null;
+    private rewardStatusLabel: Label | null = null;
 
     private canvasW = 1280;
     private canvasH = 720;
@@ -156,7 +158,7 @@ export class GameManager extends Component {
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.4.4 启动：通关奖励选择版');
+        console.log('成语塔防 Demo v0.4.5.1 启动：奖励双触发修正版');
         GameManager.inst = this;
         this.readCanvasSize();
         this.preloadWalkFrames();
@@ -276,12 +278,14 @@ export class GameManager extends Component {
         this.tipLabel = null;
         this.gateHpLabel = null;
         this.waveLabel = null;
+        this.rewardStatusLabel = null;
         this.gateHp = this.getLevelGateHp();
         this.gateShield = 0;
         this.tileRefreshing = false;
 
         this.createTitle();
         this.createLevelSelectButtons();
+        this.createRewardStatusBar();
         this.createGroundScene();
         this.createGate();
         this.createSlots();
@@ -329,6 +333,56 @@ export class GameManager extends Component {
         ).getComponent(Label);
     }
 
+
+
+    private createRewardStatusBar() {
+        const topY = this.canvasH / 2 - 158;
+        const text = this.getRewardStatusText();
+        const color = this.hasAnyReward()
+            ? new Color(255, 230, 160, 255)
+            : new Color(160, 180, 195, 255);
+
+        this.rewardStatusLabel = this.createText(
+            'reward_status',
+            text,
+            0,
+            topY,
+            19,
+            color
+        ).getComponent(Label);
+    }
+
+    private refreshRewardStatusBar() {
+        if (!this.rewardStatusLabel || !this.rewardStatusLabel.node.isValid) return;
+        this.rewardStatusLabel.string = this.getRewardStatusText();
+        this.rewardStatusLabel.color = this.hasAnyReward()
+            ? new Color(255, 230, 160, 255)
+            : new Color(160, 180, 195, 255);
+    }
+
+    private hasAnyReward() {
+        return this.gateHpRewardBonus > 0 || this.shieldRewardBonus > 0 || this.wanJianCooldownReduce > 0;
+    }
+
+    private getRewardStatusText() {
+        if (!this.hasAnyReward()) return '强化：暂无';
+
+        const parts: string[] = [];
+        if (this.gateHpRewardBonus > 0) parts.push(`城门+${this.gateHpRewardBonus}`);
+        if (this.shieldRewardBonus > 0) parts.push(`护盾+${this.shieldRewardBonus}`);
+        if (this.wanJianCooldownReduce > 0) parts.push(`箭雨-${this.wanJianCooldownReduce}s`);
+        return `强化：${parts.join('｜')}`;
+    }
+
+    private getFinalRewardSummary() {
+        if (!this.hasAnyReward()) return '无';
+
+        const parts: string[] = [];
+        if (this.gateHpRewardBonus > 0) parts.push(`城门修复 +${this.gateHpRewardBonus}`);
+        if (this.shieldRewardBonus > 0) parts.push(`护盾强化 +${this.shieldRewardBonus}`);
+        if (this.wanJianCooldownReduce > 0) parts.push(`箭雨冷却 -${this.wanJianCooldownReduce}秒`);
+        return parts.join('，');
+    }
 
     private createLevelSelectButtons() {
         const topY = this.canvasH / 2 - 122;
@@ -460,11 +514,13 @@ export class GameManager extends Component {
         this.gateHpRewardBonus = 0;
         this.shieldRewardBonus = 0;
         this.wanJianCooldownReduce = 0;
+        this.rewardChoiceLocked = false;
     }
 
     private getGateHpText() {
-        if (this.gateShield > 0) return `城门血量：${this.gateHp}  护盾：${this.gateShield}`;
-        return `城门血量：${this.gateHp}`;
+        const hpBonusText = this.gateHpRewardBonus > 0 ? `(+${this.gateHpRewardBonus})` : '';
+        if (this.gateShield > 0) return `城门血量：${this.gateHp}${hpBonusText}  护盾：${this.gateShield}`;
+        return `城门血量：${this.gateHp}${hpBonusText}`;
     }
 
     private refreshGateHpLabel() {
@@ -956,8 +1012,16 @@ export class GameManager extends Component {
         );
 
         if (success) {
-            this.createResultButton('result_restart_btn', '从第1关开始', -130, -48, 210, 54, () => this.restartFromFirstLevel(), new Color(72, 112, 78, 245));
-            this.createResultButton('result_select_btn', '返回选关', 130, -48, 210, 54, () => this.returnToLevelSelect(), new Color(82, 72, 106, 240));
+            this.createText(
+                'result_reward_status',
+                `本局强化：${this.getFinalRewardSummary()}`,
+                0,
+                -16,
+                20,
+                this.hasAnyReward() ? new Color(255, 230, 160, 255) : new Color(180, 200, 215, 255)
+            );
+            this.createResultButton('result_restart_btn', '从第1关开始', -130, -76, 210, 54, () => this.restartFromFirstLevel(), new Color(72, 112, 78, 245));
+            this.createResultButton('result_select_btn', '返回选关', 130, -76, 210, 54, () => this.returnToLevelSelect(), new Color(82, 72, 106, 240));
         } else {
             this.createResultButton('result_retry_btn', '重玩本关', -120, -52, 190, 56, () => this.restartCurrentLevel(), new Color(112, 78, 72, 245));
             this.createResultButton('result_select_btn', '返回选关', 120, -52, 190, 56, () => this.returnToLevelSelect(), new Color(72, 82, 100, 240));
@@ -965,6 +1029,7 @@ export class GameManager extends Component {
     }
 
     private showRewardChoice() {
+        this.rewardChoiceLocked = false;
         this.createBox('reward_panel', 0, 0, 780, 360, new Color(38, 48, 60, 248), '', 26);
 
         this.createText(
@@ -992,9 +1057,11 @@ export class GameManager extends Component {
             '城门修复',
             '后续关卡城门血量 +3',
             () => {
+                if (this.rewardChoiceLocked) return;
+                this.rewardChoiceLocked = true;
                 this.gateHpRewardBonus += 3;
-                this.createFloatingText('城门血量 +3', -245, 60, new Color(160, 255, 170, 255));
-                this.goNextLevel();
+                this.refreshRewardStatusBar();
+                this.showRewardPickedFeedback('已选择：城门修复', '后续关卡城门血量 +3');
             }
         );
 
@@ -1005,9 +1072,11 @@ export class GameManager extends Component {
             '护盾强化',
             '固若金汤护盾 +2',
             () => {
+                if (this.rewardChoiceLocked) return;
+                this.rewardChoiceLocked = true;
                 this.shieldRewardBonus += 2;
-                this.createFloatingText('护盾 +2', 0, 60, new Color(120, 220, 255, 255));
-                this.goNextLevel();
+                this.refreshRewardStatusBar();
+                this.showRewardPickedFeedback('已选择：护盾强化', '固若金汤护盾 +2');
             }
         );
 
@@ -1018,14 +1087,55 @@ export class GameManager extends Component {
             '箭雨强化',
             '万箭齐发冷却 -1秒',
             () => {
+                if (this.rewardChoiceLocked) return;
+                this.rewardChoiceLocked = true;
                 this.wanJianCooldownReduce = Math.min(2, this.wanJianCooldownReduce + 1);
-                this.createFloatingText('箭雨冷却 -1秒', 245, 60, new Color(255, 230, 130, 255));
-                this.goNextLevel();
+                this.refreshRewardStatusBar();
+                this.showRewardPickedFeedback('已选择：箭雨强化', '万箭齐发冷却 -1 秒');
             }
         );
 
         this.createResultButton('reward_retry_btn', '重玩本关', -120, -154, 180, 46, () => this.restartCurrentLevel(), new Color(72, 82, 100, 235));
         this.createResultButton('reward_select_btn', '返回选关', 120, -154, 180, 46, () => this.returnToLevelSelect(), new Color(82, 72, 106, 235));
+    }
+
+
+    private showRewardPickedFeedback(title: string, desc: string) {
+        const panel = this.createBox('reward_picked_panel', 0, 0, 520, 170, new Color(48, 62, 72, 248), '', 24);
+
+        this.createText(
+            'reward_picked_title',
+            title,
+            0,
+            36,
+            28,
+            new Color(255, 236, 170, 255)
+        );
+
+        this.createText(
+            'reward_picked_desc',
+            desc,
+            0,
+            0,
+            21,
+            new Color(210, 235, 245, 255)
+        );
+
+        this.createText(
+            'reward_picked_next',
+            '即将进入下一关...',
+            0,
+            -44,
+            18,
+            new Color(170, 205, 220, 255)
+        );
+
+        tween(panel)
+            .to(0.10, { scale: new Vec3(1.05, 1.05, 1) })
+            .to(0.10, { scale: new Vec3(1, 1, 1) })
+            .delay(0.55)
+            .call(() => this.goNextLevel())
+            .start();
     }
 
     private createRewardCard(name: string, x: number, y: number, title: string, desc: string, onClick: () => void) {
@@ -1081,6 +1191,7 @@ export class GameManager extends Component {
     }
 
     private goNextLevel() {
+        this.rewardChoiceLocked = false;
         if (this.currentLevelIndex < this.levelConfigs.length - 1) {
             this.currentLevelIndex++;
         } else {
