@@ -142,7 +142,7 @@ export class GameManager extends Component {
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.3.10 启动：骑兵特大号最终版');
+        console.log('成语塔防 Demo v0.4.0 启动：关卡胜负流程版');
         GameManager.inst = this;
         this.readCanvasSize();
         this.preloadWalkFrames();
@@ -162,7 +162,7 @@ export class GameManager extends Component {
         }
 
         if (this.spawnedCount >= this.currentLevel.totalEnemies && this.enemies.length <= 0) {
-            this.showResult('守城成功！点击重新开始', true);
+            this.showResult('守城成功！', true);
         }
     }
 
@@ -181,7 +181,11 @@ export class GameManager extends Component {
             doneCount++;
             if (doneCount >= 3) {
                 this.walkFramesReady = true;
-                this.createTip(`${this.currentLevel.name}：${this.currentLevel.desc}`);
+                if (this.currentLevelIndex === 2) {
+                    this.createTip('第 3 关：骑兵速度更快，优先用「万箭齐发」清场');
+                } else {
+                    this.createTip(`${this.currentLevel.name}：${this.currentLevel.desc}`);
+                }
                 console.log(`走路帧加载完成：basic=${this.basicWalkFrames.length}, shield=${this.shieldWalkFrames.length}, cavalry=${this.cavalryWalkFrames.length}`);
             }
         };
@@ -266,7 +270,11 @@ export class GameManager extends Component {
         this.createCharTiles();
 
         if (this.walkFramesReady) {
-            this.createTip(`${this.currentLevel.name}：${this.currentLevel.desc}`);
+            if (this.currentLevelIndex === 2) {
+                this.createTip('第 3 关：骑兵速度更快，优先用「万箭齐发」清场');
+            } else {
+                this.createTip(`${this.currentLevel.name}：${this.currentLevel.desc}`);
+            }
         } else {
             this.createTip('正在加载走路动画帧...');
         }
@@ -760,45 +768,88 @@ export class GameManager extends Component {
         this.refreshGateHpLabel();
 
         if (this.gateHp <= 4) this.createTip('城门危急！快拼成语救场');
-        if (this.gateHp <= 0) this.showResult('城门被破！点击重新开始', false);
+        if (this.gateHp <= 0) this.showResult('城门被破！', false);
     }
 
     private showResult(msg: string, success: boolean) {
         if (this.gameOver) return;
+
         this.gameOver = true;
+        this.waveRunning = false;
 
-        let finalMsg = msg;
+        const isLastLevel = this.currentLevelIndex >= this.levelConfigs.length - 1;
+        const title = success ? `${this.currentLevel.name} 胜利！` : '守城失败';
+        const subTitle = success
+            ? (isLastLevel ? '全部关卡已通关，可以重玩或返回选关' : '继续下一关，或重玩当前关卡')
+            : '城门被破，可以重玩本关或返回选关';
+
+        const panel = this.createBox(
+            'result_panel',
+            0,
+            8,
+            720,
+            success ? 310 : 270,
+            success ? new Color(42, 54, 65, 245) : new Color(58, 44, 48, 245),
+            '',
+            28
+        );
+
+        this.createText(
+            'result_title',
+            success ? title : `${msg} ${title}`,
+            0,
+            success ? 96 : 82,
+            34,
+            success ? new Color(255, 236, 170, 255) : new Color(255, 185, 185, 255)
+        );
+
+        this.createText(
+            'result_subtitle',
+            subTitle,
+            0,
+            success ? 52 : 38,
+            22,
+            new Color(220, 230, 240, 255)
+        );
+
         if (success) {
-            if (this.currentLevelIndex < this.levelConfigs.length - 1) {
-                finalMsg = `${this.currentLevel.name} 胜利！点击进入下一关`;
+            if (!isLastLevel) {
+                this.createResultButton('result_next_btn', '下一关', -215, -44, 170, 54, () => this.goNextLevel(), new Color(72, 112, 78, 245));
+                this.createResultButton('result_retry_btn', '重玩本关', 0, -44, 170, 54, () => this.restartCurrentLevel(), new Color(72, 82, 100, 240));
+                this.createResultButton('result_select_btn', '返回选关', 215, -44, 170, 54, () => this.returnToLevelSelect(), new Color(82, 72, 106, 240));
             } else {
-                finalMsg = `全部关卡通关！点击从第 1 关重新开始`;
+                this.createResultButton('result_restart_btn', '从第1关开始', -130, -44, 210, 54, () => this.restartFromFirstLevel(), new Color(72, 112, 78, 245));
+                this.createResultButton('result_select_btn', '返回选关', 130, -44, 210, 54, () => this.returnToLevelSelect(), new Color(82, 72, 106, 240));
             }
-        }
-
-        let panel: Node;
-        if (!success) {
-            panel = this.createImageNode('result', [this.texturePath.fail_popup], 0, 0, 560, 220, finalMsg, 32);
         } else {
-            panel = this.createBox('result', 0, 0, 650, 190, new Color(40, 45, 55, 240), '', 34);
-            this.createText('result_text', finalMsg, 0, 0, 32, new Color(255, 240, 180, 255));
+            this.createResultButton('result_retry_btn', '重玩本关', -120, -52, 190, 56, () => this.restartCurrentLevel(), new Color(112, 78, 72, 245));
+            this.createResultButton('result_select_btn', '返回选关', 120, -52, 190, 56, () => this.returnToLevelSelect(), new Color(72, 82, 100, 240));
         }
 
-        panel.on(Node.EventType.TOUCH_END, () => {
-            if (success) {
-                this.goNextLevel();
-            } else {
-                this.restartCurrentLevel();
-            }
-        }, this);
+        this.createText(
+            'result_hint',
+            '也可以直接点击上方关卡按钮切换测试',
+            0,
+            success ? -118 : -110,
+            18,
+            new Color(180, 200, 215, 255)
+        );
+    }
 
-        panel.on(Node.EventType.MOUSE_UP, () => {
-            if (success) {
-                this.goNextLevel();
-            } else {
-                this.restartCurrentLevel();
-            }
-        }, this);
+    private createResultButton(
+        name: string,
+        text: string,
+        x: number,
+        y: number,
+        w: number,
+        h: number,
+        onClick: () => void,
+        color: Color
+    ) {
+        const btn = this.createBox(name, x, y, w, h, color, text, 22);
+        btn.on(Node.EventType.TOUCH_END, onClick, this);
+        btn.on(Node.EventType.MOUSE_UP, onClick, this);
+        return btn;
     }
 
     private restartCurrentLevel() {
@@ -814,6 +865,11 @@ export class GameManager extends Component {
         this.setupScene();
     }
 
+    private restartFromFirstLevel() {
+        this.currentLevelIndex = 0;
+        this.restartCurrentLevel();
+    }
+
     private goNextLevel() {
         if (this.currentLevelIndex < this.levelConfigs.length - 1) {
             this.currentLevelIndex++;
@@ -822,6 +878,23 @@ export class GameManager extends Component {
         }
 
         this.restartCurrentLevel();
+    }
+
+    private returnToLevelSelect() {
+        this.gateHp = this.currentLevel.gateHp;
+        this.gateShield = 0;
+        this.spawnedCount = 0;
+        this.killedCount = 0;
+        this.spawnTimer = 0;
+        this.enemies = [];
+        this.gameOver = false;
+        this.waveRunning = false;
+        this.readCanvasSize();
+        this.setupScene();
+        this.createTip('请选择关卡：点击上方「第1关 / 第2关 / 第3关」开始');
+        if (this.waveLabel) {
+            this.waveLabel.string = '选关模式  点击上方关卡按钮开始';
+        }
     }
 
     private createTip(text: string) {
