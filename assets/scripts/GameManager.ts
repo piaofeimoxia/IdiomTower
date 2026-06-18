@@ -29,7 +29,7 @@ type AnimatedEnemyNode = {
     frames: Node[];
 };
 
-type EnemyKind = 'basic' | 'shield' | 'cavalry';
+type EnemyKind = 'basic' | 'shield' | 'cavalry' | 'archer';
 
 @ccclass('GameManager')
 export class GameManager extends Component {
@@ -75,6 +75,7 @@ export class GameManager extends Component {
             spawnInterval: 1.35,
             shieldEvery: 0,
             cavalryEvery: 0,
+            archerEvery: 0,
         },
         {
             name: '第 2 关',
@@ -84,6 +85,7 @@ export class GameManager extends Component {
             spawnInterval: 1.16,
             shieldEvery: 4,
             cavalryEvery: 0,
+            archerEvery: 0,
         },
         {
             name: '第 3 关',
@@ -93,6 +95,17 @@ export class GameManager extends Component {
             spawnInterval: 0.98,
             shieldEvery: 4,
             cavalryEvery: 5,
+            archerEvery: 0,
+        },
+        {
+            name: '第 4 关',
+            desc: '远程关：新增弓兵，会停在远处射击城门',
+            totalEnemies: 24,
+            gateHp: 12,
+            spawnInterval: 0.94,
+            shieldEvery: 4,
+            cavalryEvery: 6,
+            archerEvery: 7,
         },
     ];
 
@@ -111,6 +124,7 @@ export class GameManager extends Component {
     private basicWalkFrames: SpriteFrame[] = [];
     private shieldWalkFrames: SpriteFrame[] = [];
     private cavalryWalkFrames: SpriteFrame[] = [];
+    private archerWalkFrames: SpriteFrame[] = [];
 
     /**
      * 所有 PNG 统一放在：
@@ -148,6 +162,7 @@ export class GameManager extends Component {
         enemy_basic_soldier: 'textures/enemy_basic_soldier',
         enemy_shield_soldier: 'textures/enemy_shield_soldier',
         enemy_cavalry: 'textures/enemy_cavalry',
+        enemy_archer: 'textures/enemy_archer',
         enemy_bing_fallback: 'textures/enemy_bing',
 
         enemy_basic_walk_0: 'textures/enemy_basic_walk_0',
@@ -164,10 +179,15 @@ export class GameManager extends Component {
         enemy_cavalry_walk_1: 'textures/enemy_cavalry_walk_1',
         enemy_cavalry_walk_2: 'textures/enemy_cavalry_walk_2',
         enemy_cavalry_walk_3: 'textures/enemy_cavalry_walk_3',
+
+        enemy_archer_walk_0: 'textures/enemy_archer_walk_0',
+        enemy_archer_walk_1: 'textures/enemy_archer_walk_1',
+        enemy_archer_walk_2: 'textures/enemy_archer_walk_2',
+        enemy_archer_walk_3: 'textures/enemy_archer_walk_3',
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.4.7 启动：画地为牢奖励联动版');
+        console.log('成语塔防 Demo v0.4.8.4 启动：弓兵贴地走路与停步射击修正版');
         GameManager.inst = this;
         this.readCanvasSize();
         this.preloadWalkFrames();
@@ -208,14 +228,14 @@ export class GameManager extends Component {
         let doneCount = 0;
         const doneOne = () => {
             doneCount++;
-            if (doneCount >= 3) {
+            if (doneCount >= 4) {
                 this.walkFramesReady = true;
                 if (this.currentLevelIndex === 2) {
                     this.createTip('第 3 关：骑兵更频繁，优先用「万箭齐发」清场');
                 } else {
                     this.createTip(`${this.currentLevel.name}：${this.currentLevel.desc}`);
                 }
-                console.log(`走路帧加载完成：basic=${this.basicWalkFrames.length}, shield=${this.shieldWalkFrames.length}, cavalry=${this.cavalryWalkFrames.length}`);
+                console.log(`走路帧加载完成：basic=${this.basicWalkFrames.length}, shield=${this.shieldWalkFrames.length}, cavalry=${this.cavalryWalkFrames.length}, archer=${this.archerWalkFrames.length}`);
             }
         };
 
@@ -254,6 +274,19 @@ export class GameManager extends Component {
             ],
             frames => {
                 this.cavalryWalkFrames = frames;
+                doneOne();
+            }
+        );
+
+        this.loadSpriteFrameList(
+            [
+                this.texturePath.enemy_archer_walk_0,
+                this.texturePath.enemy_archer_walk_1,
+                this.texturePath.enemy_archer_walk_2,
+                this.texturePath.enemy_archer_walk_3,
+            ],
+            frames => {
+                this.archerWalkFrames = frames;
                 doneOne();
             }
         );
@@ -304,6 +337,8 @@ export class GameManager extends Component {
         if (this.walkFramesReady) {
             if (this.currentLevelIndex === 2) {
                 this.createTip('第 3 关：骑兵更频繁，优先用「万箭齐发」清场');
+            } else if (this.currentLevelIndex === 3) {
+                this.createTip('第 4 关：弓兵会远程射击，用「画地为牢」打断射击');
             } else {
                 this.createTip(`${this.currentLevel.name}：${this.currentLevel.desc}`);
             }
@@ -826,6 +861,11 @@ export class GameManager extends Component {
             return 'cavalry';
         }
 
+        // 第 4 关开始解锁弓兵：远程攻击城门
+        if (level.archerEvery > 0 && orderNo % level.archerEvery === 0) {
+            return 'archer';
+        }
+
         // 第 2 关开始解锁盾兵
         if (level.shieldEvery > 0 && orderNo % level.shieldEvery === 0) {
             return 'shield';
@@ -842,8 +882,10 @@ export class GameManager extends Component {
         const kind = this.pickEnemyKind();
         const enemyName = `enemy_${kind}`;
 
-        if (kind === 'cavalry') {
+        if (kind === 'cavalry' && this.currentLevelIndex < 3) {
             this.showCavalryAlert();
+        } else if (kind === 'archer' && this.currentLevelIndex === 3) {
+            this.showArcherAlert();
         }
 
         let enemyNode: Node;
@@ -865,6 +907,22 @@ export class GameManager extends Component {
             enemyNode = data.node;
             spriteRoot = data.spriteRoot;
             frameNodes = data.frames;
+        } else if (kind === 'archer' && this.archerWalkFrames.length >= 2) {
+            const data = this.createAnimatedEnemyNode(`${enemyName}_${this.spawnedCount}`, this.archerWalkFrames, startX, y, 88, 88);
+            enemyNode = data.node;
+            spriteRoot = data.spriteRoot;
+            frameNodes = data.frames;
+        } else if (kind === 'archer') {
+            enemyNode = this.createImageNode(
+                `${enemyName}_${this.spawnedCount}`,
+                [this.texturePath.enemy_archer, this.texturePath.enemy_basic_soldier, this.texturePath.enemy_bing_fallback],
+                startX,
+                y,
+                88,
+                88,
+                '弓',
+                28
+            );
         } else if (kind === 'cavalry') {
             enemyNode = this.createImageNode(
                 `${enemyName}_${this.spawnedCount}`,
@@ -894,7 +952,7 @@ export class GameManager extends Component {
         const enemy = enemyNode.addComponent(Enemy);
 
         if (frameNodes.length > 0 && spriteRoot) {
-            const motionType = kind === 'shield' ? 'shield' : kind === 'cavalry' ? 'cavalry' : 'basic';
+            const motionType = kind === 'shield' ? 'shield' : kind === 'cavalry' ? 'cavalry' : kind === 'archer' ? 'archer' : 'basic';
             enemy.setAnimatedNodes(spriteRoot, frameNodes, 4, motionType);
         }
 
@@ -906,6 +964,10 @@ export class GameManager extends Component {
         } else if (kind === 'cavalry') {
             // 骑兵：第 3 关压迫型敌人，速度快但血量低。
             enemy.init(64 + Math.random() * 8, 1, 1, this.getEnemyHitX());
+        } else if (kind === 'archer') {
+            // 弓兵：第 4 关远程敌人，到射程后停下，每隔一段时间射城门。
+            enemy.init(42 + Math.random() * 8, 1, 1, this.getEnemyHitX());
+            enemy.setRangedAttack(this.getGateX() - 520, 2.2);
         } else {
             // 普通兵：随关卡略微加速，第 1 关保持教学友好。
             const basicSpeed = this.currentLevelIndex === 0
@@ -967,6 +1029,19 @@ export class GameManager extends Component {
         this.removeEnemy(enemy, false);
         enemy.node.destroy();
 
+        this.applyGateDamage(damage, '敌人攻城！');
+    }
+
+    public enemyRangedAttackGate(enemy: Enemy) {
+        if (this.gameOver || !enemy || !enemy.node || !enemy.node.isValid) return;
+
+        const p = enemy.node.position;
+        this.createArrowShotEffect(p.x + 24, p.y + 28, this.getGateX() - 40, 105);
+        this.createTip('弓兵射击！远程攻击城门');
+        this.applyGateDamage(enemy.damage || 1, '弓兵射击！');
+    }
+
+    private applyGateDamage(damage: number, tip: string) {
         if (this.gateShield > 0) {
             const absorb = Math.min(this.gateShield, damage);
             this.gateShield -= absorb;
@@ -975,12 +1050,26 @@ export class GameManager extends Component {
             this.createTip(`护盾抵挡了 ${absorb} 点伤害`);
         } else {
             this.gateHp -= damage;
+            if (tip) this.createTip(tip);
         }
 
         this.refreshGateHpLabel();
 
-        if (this.gateHp <= 4) this.createTip('城门危急！快拼成语救场');
+        if (this.gateHp <= 4 && this.gateHp > 0) this.createTip('城门危急！快拼成语救场');
         if (this.gateHp <= 0) this.showResult('城门被破！', false);
+    }
+
+    private createArrowShotEffect(fromX: number, fromY: number, toX: number, toY: number) {
+        const arrow = this.createBox('archer_arrow', fromX, fromY, 42, 8, new Color(215, 180, 90, 230), '', 12);
+        arrow.setRotationFromEuler(0, 0, 8);
+
+        tween(arrow)
+            .to(0.24, { position: new Vec3(toX, toY, 0) })
+            .call(() => {
+                this.createHitBurst(toX, toY, new Color(255, 210, 120, 180), 24);
+                arrow.destroy();
+            })
+            .start();
     }
 
 
@@ -1036,6 +1125,25 @@ export class GameManager extends Component {
             .by(0.035, { position: new Vec3(5, 0, 0) })
             .by(0.035, { position: new Vec3(-10, 0, 0) })
             .by(0.035, { position: new Vec3(5, 0, 0) })
+            .start();
+    }
+
+    private showArcherAlert() {
+        // 只在第 4 关提示一次；后续关卡不再弹“弓兵来袭”。
+        if (this.currentLevelIndex !== 3) return;
+        if (this.spawnedCount > 7) return;
+
+        const y = this.canvasH / 2 - 202;
+        const banner = this.createBox('archer_alert_banner', 0, y, 340, 46, new Color(78, 86, 112, 235), '弓兵来袭！', 25);
+
+        this.createTip('弓兵会在远处射击城门，用「画地为牢」打断射击');
+
+        tween(banner)
+            .to(0.08, { scale: new Vec3(1.10, 1.10, 1) })
+            .to(0.10, { scale: new Vec3(1, 1, 1) })
+            .delay(0.70)
+            .to(0.16, { scale: new Vec3(0.85, 0.85, 1) })
+            .call(() => banner.destroy())
             .start();
     }
 

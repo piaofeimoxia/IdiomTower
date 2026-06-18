@@ -12,6 +12,10 @@ export class Enemy extends Component {
     private hitX = 145;
     private dead = false;
     private frozenTimer = 0;
+    private rangedAttack = false;
+    private rangedAttackX = 0;
+    private rangedAttackInterval = 2.2;
+    private isRangedStopped = false;
 
     private spriteRoot: Node | null = null;
     private frameNodes: Node[] = [];
@@ -19,19 +23,28 @@ export class Enemy extends Component {
 
     private animTimer = 0;
     private seqIndex = 0;
-    private motionType: 'basic' | 'shield' | 'cavalry' = 'basic';
+    private motionType: 'basic' | 'shield' | 'cavalry' | 'archer' = 'basic';
+
+    private archerState: 'walk' | 'aim' | 'shoot' | 'cooldown' = 'walk';
+    private archerStateTimer = 0;
+    private archerAimDuration = 0.18;
+    private archerShootDuration = 0.12;
 
     // 普通兵：用 3 姿态往返循环，避开最别扭的一帧，让走路更顺眼
     private readonly basicSequence = [0, 1, 2, 1];
     private readonly basicDurations = [0.20, 0.10, 0.20, 0.10];
 
-    // 盾兵：保留目前更自然的 4 帧完整循环
+    // 盾兵：更稳定的贴地走路节奏
     private readonly shieldSequence = [0, 1, 2, 3];
     private readonly shieldDurations = [0.18, 0.10, 0.18, 0.10];
 
-    // 骑兵：完整 4 帧循环，主要依靠马腿变化表现步态，避免上下浮动。
+    // 骑兵：完整 4 帧循环，主要依靠马腿变化表现步态，避免上下漂浮。
     private readonly cavalrySequence = [0, 1, 2, 3];
     private readonly cavalryDurations = [0.16, 0.12, 0.16, 0.12];
+
+    // 弓兵：贴地走路，脚步节奏参考盾兵，但保留自己的持弓姿态。
+    private readonly archerWalkSequence = [0, 1, 2, 3];
+    private readonly archerWalkDurations = [0.18, 0.10, 0.18, 0.10];
 
     public init(speed: number, hp = 1, damage = 1, hitX = 145) {
         this.speed = speed;
@@ -42,25 +55,33 @@ export class Enemy extends Component {
         this.applyFramePose();
     }
 
-    public setAnimatedNodes(spriteRoot: Node, frameNodes: Node[], _fps = 4, motionType: 'basic' | 'shield' | 'cavalry' = 'basic') {
+    public setAnimatedNodes(spriteRoot: Node, frameNodes: Node[], _fps = 4, motionType: 'basic' | 'shield' | 'cavalry' | 'archer' = 'basic') {
         this.spriteRoot = spriteRoot;
         this.frameNodes = frameNodes || [];
         this.motionType = motionType;
         const seq = this.getSequence();
-        this.seqIndex = Math.floor(Math.random() * Math.max(1, seq.length));
+        this.seqIndex = this.motionType === 'archer'
+            ? 0
+            : Math.floor(Math.random() * Math.max(1, seq.length));
         this.animTimer = 0;
+        if (this.motionType === 'archer') {
+            this.archerState = 'walk';
+            this.archerStateTimer = 0;
+        }
         this.applyFramePose();
     }
 
     private getSequence(): number[] {
         if (this.motionType === 'shield') return this.shieldSequence;
         if (this.motionType === 'cavalry') return this.cavalrySequence;
+        if (this.motionType === 'archer') return this.archerWalkSequence;
         return this.basicSequence;
     }
 
     private getDurations(): number[] {
         if (this.motionType === 'shield') return this.shieldDurations;
         if (this.motionType === 'cavalry') return this.cavalryDurations;
+        if (this.motionType === 'archer') return this.archerWalkDurations;
         return this.basicDurations;
     }
 
@@ -70,6 +91,8 @@ export class Enemy extends Component {
         this.shadowNode.setSiblingIndex(0);
 
         const isCavalry = this.motionType === 'cavalry';
+        const isArcher = this.motionType === 'archer';
+        // 弓兵也使用步兵式贴地阴影，不再额外抬高，避免视觉上像飘着走。
         this.shadowNode.setPosition(0, isCavalry ? -36 : -24);
 
         const ui = this.shadowNode.addComponent(UITransform);
@@ -85,26 +108,56 @@ export class Enemy extends Component {
         if (this.frameNodes.length <= 0) return;
 
         const seq = this.getSequence();
-        const frameIndex = seq[this.seqIndex % seq.length] ?? 0;
+        let frameIndex = seq[this.seqIndex % seq.length] ?? 0;
+
+        if (this.motionType === 'archer' && this.isRangedStopped) {
+            if (this.archerState === 'aim') {
+                frameIndex = 1;
+            } else if (this.archerState === 'shoot') {
+                frameIndex = 3;
+            } else if (this.archerState === 'cooldown') {
+                frameIndex = 2;
+            }
+        }
 
         for (let i = 0; i < this.frameNodes.length; i++) {
             const f = this.frameNodes[i];
             if (f && f.isValid) f.active = i === frameIndex;
         }
 
-        // 骑兵避免上下漂浮；步兵只保留极轻的重心变化。
         if (this.spriteRoot && this.spriteRoot.isValid) {
             let yOffset = 0;
-            if (this.motionType !== 'cavalry') {
+            let xOffset = 0;
+
+            if (this.motionType === 'cavalry') {
+                yOffset = 0;
+            } else if (this.motionType === 'archer') {
+                if (!this.isRangedStopped) {
+                    // 弓兵走路阶段改为与盾兵相同的贴地步态逻辑。
+                    yOffset = (frameIndex === 1 || frameIndex === 3) ? 1 : 0;
+                } else if (this.archerState === 'shoot') {
+                    xOffset = 1;
+                }
+            } else {
                 yOffset = (frameIndex === 1 || frameIndex === 3) ? 1 : 0;
             }
-            this.spriteRoot.setPosition(0, yOffset, 0);
+
+            this.spriteRoot.setPosition(xOffset, yOffset, 0);
         }
 
         if (this.shadowNode && this.shadowNode.isValid) {
             let scaleX = 1.0;
             if (this.motionType === 'cavalry') {
                 scaleX = (frameIndex === 1 || frameIndex === 3) ? 0.97 : 1.02;
+            } else if (this.motionType === 'archer') {
+                if (!this.isRangedStopped) {
+                    // 弓兵走路时阴影缩放也与盾兵一致。
+                    scaleX = (frameIndex === 1 || frameIndex === 3) ? 0.92 : 1.0;
+                } else if (this.archerState === 'shoot') {
+                    scaleX = 0.92;
+                } else {
+                    scaleX = 0.98;
+                }
             } else {
                 scaleX = (frameIndex === 1 || frameIndex === 3) ? 0.92 : 1.0;
             }
@@ -112,6 +165,14 @@ export class Enemy extends Component {
         }
     }
 
+    public setRangedAttack(attackX: number, interval = 2.2) {
+        this.rangedAttack = true;
+        this.rangedAttackX = attackX;
+        this.rangedAttackInterval = interval;
+        this.isRangedStopped = false;
+        this.archerState = 'walk';
+        this.archerStateTimer = 0;
+    }
 
     public freeze(seconds: number) {
         if (this.dead) return;
@@ -177,24 +238,103 @@ export class Enemy extends Component {
             return;
         }
 
+        if (this.motionType === 'archer' && this.rangedAttack) {
+            this.updateArcher(dt);
+        } else {
+            this.updateWalker(dt);
+        }
+
+        if (!this.rangedAttack && this.node.position.x >= this.hitX) {
+            GameManager.inst.enemyHitGate(this);
+        }
+    }
+
+    private updateWalker(dt: number) {
         const p = this.node.position;
         const nextX = Math.round((p.x + this.speed * dt) * 2) / 2;
         this.node.setPosition(nextX, p.y, p.z);
+        this.updateWalkAnimation(dt);
+    }
 
-        if (this.frameNodes.length > 1) {
-            this.animTimer += dt;
-            const durations = this.getDurations();
+    private updateWalkAnimation(dt: number) {
+        if (this.frameNodes.length <= 1) return;
+
+        this.animTimer += dt;
+        const durations = this.getDurations();
+        while (true) {
             const duration = durations[this.seqIndex % durations.length] || 0.14;
-            while (this.animTimer >= duration) {
-                this.animTimer -= duration;
-                this.seqIndex = (this.seqIndex + 1) % this.getSequence().length;
+            if (this.animTimer < duration) break;
+            this.animTimer -= duration;
+            this.seqIndex = (this.seqIndex + 1) % this.getSequence().length;
+            this.applyFramePose();
+        }
+    }
+
+    private updateArcher(dt: number) {
+        const p = this.node.position;
+
+        if (!this.isRangedStopped) {
+            if (p.x >= this.rangedAttackX) {
+                this.isRangedStopped = true;
+                this.archerState = 'aim';
+                this.archerStateTimer = 0;
+                this.node.setPosition(this.rangedAttackX, p.y, p.z);
+                this.seqIndex = 1;
+                this.animTimer = 0;
+                this.applyFramePose();
+                return;
+            }
+
+            const nextX = Math.round((p.x + this.speed * dt) * 2) / 2;
+            this.node.setPosition(nextX, p.y, p.z);
+            this.updateWalkAnimation(dt);
+            return;
+        }
+
+        this.archerStateTimer += dt;
+
+        if (this.archerState === 'aim') {
+            if (this.archerStateTimer >= this.archerAimDuration) {
+                this.archerState = 'shoot';
+                this.archerStateTimer = 0;
+                this.applyFramePose();
+                this.playRangedAttackPose();
+                GameManager.inst.enemyRangedAttackGate(this);
+            }
+            return;
+        }
+
+        if (this.archerState === 'shoot') {
+            if (this.archerStateTimer >= this.archerShootDuration) {
+                this.archerState = 'cooldown';
+                this.archerStateTimer = 0;
+                this.applyFramePose();
+            }
+            return;
+        }
+
+        if (this.archerState === 'cooldown') {
+            if (this.archerStateTimer >= this.rangedAttackInterval) {
+                this.archerState = 'aim';
+                this.archerStateTimer = 0;
                 this.applyFramePose();
             }
         }
+    }
 
-        if (this.node.position.x >= this.hitX) {
-            GameManager.inst.enemyHitGate(this);
+    private playRangedAttackPose() {
+        if (this.motionType === 'archer') {
+            tween(this.node)
+                .to(0.04, { scale: new Vec3(1.04, 0.98, 1) })
+                .to(0.08, { scale: new Vec3(1, 1, 1) })
+                .start();
+            return;
         }
+
+        tween(this.node)
+            .to(0.06, { scale: new Vec3(1.08, 0.96, 1) })
+            .to(0.10, { scale: new Vec3(1, 1, 1) })
+            .start();
     }
 
     public takeDamage(damage: number) {

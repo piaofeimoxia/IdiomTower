@@ -2,7 +2,7 @@
   "ver": "1.0.27",
   "importer": "image",
   "imported": true,
-  "uuid": "12253b9a-a20e-4897-bd9a-6f1503347075",
+  "uuid": "48e379f5-0329-4c4a-805b-2e70204b500e",
   "files": [
     ".json",
     ".png"
@@ -10,14 +10,14 @@
   "subMetas": {
     "6c48a": {
       "importer": "texture",
-      "uuid": "12253b9a-a20e-4897-bd9a-6f1503347075@6c48a",
-      "displayName": "enemy_archer",
+      "uuid": "48e379f5-0329-4c4a-805b-2e70204b500e@6c48a",
+      "displayName": "enemy_archer_walk_3",
       "id": "6c48a",
       "name": "texture",
       "userData": {
         "wrapModeS": "clamp-to-edge",
         "wrapModeT": "clamp-to-edge",
-        "imageUuidOrDatabaseUri": "12253b9a-a20e-4897-bd9a-6f1503347075",
+        "imageUuidOrDatabaseUri": "48e379f5-0329-4c4a-805b-2e70204b500e",
         "isUuid": true,
         "visible": false,
         "minfilter": "linear",
@@ -34,18 +34,18 @@
     },
     "f9941": {
       "importer": "sprite-frame",
-      "uuid": "12253b9a-a20e-4897-bd9a-6f1503347075@f9941",
-      "displayName": "enemy_archer",
+      "uuid": "48e379f5-0329-4c4a-805b-2e70204b500e@f9941",
+      "displayName": "enemy_archer_walk_3",
       "id": "f9941",
       "name": "spriteFrame",
       "userData": {
         "trimThreshold": 1,
         "rotated": false,
-        "offsetX": -0.5,
+        "offsetX": 0,
         "offsetY": 0,
-        "trimX": 10,
+        "trimX": 15,
         "trimY": 2,
-        "width": 71,
+        "width": 62,
         "height": 88,
         "rawWidth": 92,
         "rawHeight": 92,
@@ -60,16 +60,16 @@
         "meshType": 0,
         "vertices": {
           "rawPosition": [
-            -35.5,
+            -31,
             -44,
             0,
-            35.5,
+            31,
             -44,
             0,
-            -35.5,
+            -31,
             44,
             0,
-            35.5,
+            31,
             44,
             0
           ],
@@ -82,38 +82,38 @@
             3
           ],
           "uv": [
-            10,
+            15,
             90,
-            81,
+            77,
             90,
-            10,
+            15,
             2,
-            81,
+            77,
             2
           ],
           "nuv": [
-            0.10869565217391304,
+            0.16304347826086957,
             0.021739130434782608,
-            0.8804347826086957,
+            0.8369565217391305,
             0.021739130434782608,
-            0.10869565217391304,
+            0.16304347826086957,
             0.9782608695652174,
-            0.8804347826086957,
+            0.8369565217391305,
             0.9782608695652174
           ],
           "minPos": [
-            -35.5,
+            -31,
             -44,
             0
           ],
           "maxPos": [
-            35.5,
+            31,
             44,
             0
           ]
         },
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "12253b9a-a20e-4897-bd9a-6f1503347075@6c48a",
+        "imageUuidOrDatabaseUri": "48e379f5-0329-4c4a-805b-2e70204b500e@6c48a",
         "atlasUuid": "",
         "trimType": "auto"
       },
@@ -129,6 +129,6 @@
     "type": "sprite-frame",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": true,
-    "redirect": "12253b9a-a20e-4897-bd9a-6f1503347075@6c48a"
+    "redirect": "48e379f5-0329-4c4a-805b-2e70204b500e@6c48a"
   }
 }
