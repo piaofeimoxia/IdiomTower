@@ -55,6 +55,10 @@ export class GameManager extends Component {
     private readonly guRuoCooldown = 4.0;
     private tileRefreshing = false;
 
+    private gateHpRewardBonus = 0;
+    private shieldRewardBonus = 0;
+    private wanJianCooldownReduce = 0;
+
     private currentLevelIndex = 0;
 
     private readonly levelConfigs = [
@@ -152,7 +156,7 @@ export class GameManager extends Component {
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.4.3.1 启动：冷却时清空成语修正版');
+        console.log('成语塔防 Demo v0.4.4 启动：通关奖励选择版');
         GameManager.inst = this;
         this.readCanvasSize();
         this.preloadWalkFrames();
@@ -272,7 +276,7 @@ export class GameManager extends Component {
         this.tipLabel = null;
         this.gateHpLabel = null;
         this.waveLabel = null;
-        this.gateHp = this.currentLevel.gateHp;
+        this.gateHp = this.getLevelGateHp();
         this.gateShield = 0;
         this.tileRefreshing = false;
 
@@ -352,6 +356,7 @@ export class GameManager extends Component {
     private selectLevel(index: number) {
         if (index < 0 || index >= this.levelConfigs.length) return;
         this.currentLevelIndex = index;
+        this.resetRunRewards();
         this.restartCurrentLevel();
     }
 
@@ -441,6 +446,20 @@ export class GameManager extends Component {
 
     private getEnemyHitX() {
         return this.getGateX() - 120;
+    }
+
+    private getLevelGateHp() {
+        return this.currentLevel.gateHp + this.gateHpRewardBonus;
+    }
+
+    private getWanJianCooldown() {
+        return Math.max(3, this.wanJianCooldown - this.wanJianCooldownReduce);
+    }
+
+    private resetRunRewards() {
+        this.gateHpRewardBonus = 0;
+        this.shieldRewardBonus = 0;
+        this.wanJianCooldownReduce = 0;
     }
 
     private getGateHpText() {
@@ -582,10 +601,10 @@ export class GameManager extends Component {
     }
 
     private releaseWanJianQiFa() {
-        this.wanJianCooldownRemain = this.wanJianCooldown;
+        this.wanJianCooldownRemain = this.getWanJianCooldown();
 
         this.createFloatingText('万箭齐发！', 0, 90, new Color(255, 240, 120, 255));
-        this.createTip(`成语释放：万箭齐发，全屏清怪，冷却 ${this.wanJianCooldown} 秒`);
+        this.createTip(`成语释放：万箭齐发，全屏清怪，冷却 ${this.getWanJianCooldown()} 秒`);
 
         const effect = this.createImageNode(
             'effect_arrow_rain',
@@ -621,11 +640,12 @@ export class GameManager extends Component {
     private releaseGuRuoJinTang() {
         this.guRuoCooldownRemain = this.guRuoCooldown;
 
-        this.gateShield += 5;
+        const shieldAmount = 5 + this.shieldRewardBonus;
+        this.gateShield += shieldAmount;
         this.refreshGateHpLabel();
 
         this.createFloatingText('固若金汤！', this.getGateX(), 135, new Color(120, 220, 255, 255));
-        this.createTip(`成语释放：固若金汤，城门获得 5 点护盾，冷却 ${this.guRuoCooldown} 秒`);
+        this.createTip(`成语释放：固若金汤，城门获得 ${shieldAmount} 点护盾，冷却 ${this.guRuoCooldown} 秒`);
 
         const effect = this.createImageNode(
             'effect_blue_shield',
@@ -895,17 +915,23 @@ export class GameManager extends Component {
         this.waveRunning = false;
 
         const isLastLevel = this.currentLevelIndex >= this.levelConfigs.length - 1;
+
+        if (success && !isLastLevel) {
+            this.showRewardChoice();
+            return;
+        }
+
         const title = success ? `${this.currentLevel.name} 胜利！` : '守城失败';
         const subTitle = success
-            ? (isLastLevel ? '全部关卡已通关，可以重玩或返回选关' : '继续下一关，或重玩当前关卡')
+            ? '全部关卡已通关，可以从第1关重开或返回选关'
             : '城门被破，可以重玩本关或返回选关';
 
-        const panel = this.createBox(
+        this.createBox(
             'result_panel',
             0,
             8,
             720,
-            success ? 310 : 270,
+            success ? 290 : 270,
             success ? new Color(42, 54, 65, 245) : new Color(58, 44, 48, 245),
             '',
             28
@@ -915,7 +941,7 @@ export class GameManager extends Component {
             'result_title',
             success ? title : `${msg} ${title}`,
             0,
-            success ? 96 : 82,
+            success ? 82 : 82,
             34,
             success ? new Color(255, 236, 170, 255) : new Color(255, 185, 185, 255)
         );
@@ -924,33 +950,94 @@ export class GameManager extends Component {
             'result_subtitle',
             subTitle,
             0,
-            success ? 52 : 38,
+            success ? 38 : 38,
             22,
             new Color(220, 230, 240, 255)
         );
 
         if (success) {
-            if (!isLastLevel) {
-                this.createResultButton('result_next_btn', '下一关', -215, -44, 170, 54, () => this.goNextLevel(), new Color(72, 112, 78, 245));
-                this.createResultButton('result_retry_btn', '重玩本关', 0, -44, 170, 54, () => this.restartCurrentLevel(), new Color(72, 82, 100, 240));
-                this.createResultButton('result_select_btn', '返回选关', 215, -44, 170, 54, () => this.returnToLevelSelect(), new Color(82, 72, 106, 240));
-            } else {
-                this.createResultButton('result_restart_btn', '从第1关开始', -130, -44, 210, 54, () => this.restartFromFirstLevel(), new Color(72, 112, 78, 245));
-                this.createResultButton('result_select_btn', '返回选关', 130, -44, 210, 54, () => this.returnToLevelSelect(), new Color(82, 72, 106, 240));
-            }
+            this.createResultButton('result_restart_btn', '从第1关开始', -130, -48, 210, 54, () => this.restartFromFirstLevel(), new Color(72, 112, 78, 245));
+            this.createResultButton('result_select_btn', '返回选关', 130, -48, 210, 54, () => this.returnToLevelSelect(), new Color(82, 72, 106, 240));
         } else {
             this.createResultButton('result_retry_btn', '重玩本关', -120, -52, 190, 56, () => this.restartCurrentLevel(), new Color(112, 78, 72, 245));
             this.createResultButton('result_select_btn', '返回选关', 120, -52, 190, 56, () => this.returnToLevelSelect(), new Color(72, 82, 100, 240));
         }
+    }
+
+    private showRewardChoice() {
+        this.createBox('reward_panel', 0, 0, 780, 360, new Color(38, 48, 60, 248), '', 26);
 
         this.createText(
-            'result_hint',
-            '也可以直接点击上方关卡按钮切换测试',
+            'reward_title',
+            `${this.currentLevel.name} 胜利！选择一个奖励进入下一关`,
             0,
-            success ? -118 : -110,
-            18,
-            new Color(180, 200, 215, 255)
+            132,
+            30,
+            new Color(255, 236, 170, 255)
         );
+
+        this.createText(
+            'reward_subtitle',
+            '奖励会在后续关卡生效',
+            0,
+            96,
+            20,
+            new Color(190, 220, 235, 255)
+        );
+
+        this.createRewardCard(
+            'reward_gate',
+            -245,
+            -18,
+            '城门修复',
+            '后续关卡城门血量 +3',
+            () => {
+                this.gateHpRewardBonus += 3;
+                this.createFloatingText('城门血量 +3', -245, 60, new Color(160, 255, 170, 255));
+                this.goNextLevel();
+            }
+        );
+
+        this.createRewardCard(
+            'reward_shield',
+            0,
+            -18,
+            '护盾强化',
+            '固若金汤护盾 +2',
+            () => {
+                this.shieldRewardBonus += 2;
+                this.createFloatingText('护盾 +2', 0, 60, new Color(120, 220, 255, 255));
+                this.goNextLevel();
+            }
+        );
+
+        this.createRewardCard(
+            'reward_arrow',
+            245,
+            -18,
+            '箭雨强化',
+            '万箭齐发冷却 -1秒',
+            () => {
+                this.wanJianCooldownReduce = Math.min(2, this.wanJianCooldownReduce + 1);
+                this.createFloatingText('箭雨冷却 -1秒', 245, 60, new Color(255, 230, 130, 255));
+                this.goNextLevel();
+            }
+        );
+
+        this.createResultButton('reward_retry_btn', '重玩本关', -120, -154, 180, 46, () => this.restartCurrentLevel(), new Color(72, 82, 100, 235));
+        this.createResultButton('reward_select_btn', '返回选关', 120, -154, 180, 46, () => this.returnToLevelSelect(), new Color(82, 72, 106, 235));
+    }
+
+    private createRewardCard(name: string, x: number, y: number, title: string, desc: string, onClick: () => void) {
+        const card = this.createBox(name, x, y, 210, 140, new Color(58, 72, 88, 245), '', 22);
+
+        this.createText(`${name}_title`, title, x, y + 34, 26, new Color(255, 236, 170, 255));
+        this.createText(`${name}_desc`, desc, x, y - 8, 19, new Color(220, 232, 240, 255));
+        this.createText(`${name}_hint`, '点击选择', x, y - 48, 17, new Color(160, 210, 255, 255));
+
+        card.on(Node.EventType.TOUCH_END, onClick, this);
+        card.on(Node.EventType.MOUSE_UP, onClick, this);
+        return card;
     }
 
     private createResultButton(
@@ -970,7 +1057,7 @@ export class GameManager extends Component {
     }
 
     private restartCurrentLevel() {
-        this.gateHp = this.currentLevel.gateHp;
+        this.gateHp = this.getLevelGateHp();
         this.gateShield = 0;
         this.tileRefreshing = false;
         this.spawnedCount = 0;
@@ -989,6 +1076,7 @@ export class GameManager extends Component {
 
     private restartFromFirstLevel() {
         this.currentLevelIndex = 0;
+        this.resetRunRewards();
         this.restartCurrentLevel();
     }
 
@@ -1003,7 +1091,8 @@ export class GameManager extends Component {
     }
 
     private returnToLevelSelect() {
-        this.gateHp = this.currentLevel.gateHp;
+        this.resetRunRewards();
+        this.gateHp = this.getLevelGateHp();
         this.gateShield = 0;
         this.tileRefreshing = false;
         this.spawnedCount = 0;
