@@ -49,6 +49,12 @@ export class GameManager extends Component {
     private walkFramesReady = false;
     private lastCavalryAlertSpawn = -999;
 
+    private wanJianCooldownRemain = 0;
+    private guRuoCooldownRemain = 0;
+    private readonly wanJianCooldown = 5.0;
+    private readonly guRuoCooldown = 4.0;
+    private tileRefreshing = false;
+
     private currentLevelIndex = 0;
 
     private readonly levelConfigs = [
@@ -146,7 +152,7 @@ export class GameManager extends Component {
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.4.2 启动：三关数值节奏调整版');
+        console.log('成语塔防 Demo v0.4.3.1 启动：冷却时清空成语修正版');
         GameManager.inst = this;
         this.readCanvasSize();
         this.preloadWalkFrames();
@@ -154,6 +160,9 @@ export class GameManager extends Component {
     }
 
     update(dt: number) {
+        if (this.wanJianCooldownRemain > 0) this.wanJianCooldownRemain = Math.max(0, this.wanJianCooldownRemain - dt);
+        if (this.guRuoCooldownRemain > 0) this.guRuoCooldownRemain = Math.max(0, this.guRuoCooldownRemain - dt);
+
         if (this.gameOver || !this.waveRunning) return;
 
         // 行走帧未预加载完成前不刷怪，避免第一批敌人没有动画。
@@ -265,6 +274,7 @@ export class GameManager extends Component {
         this.waveLabel = null;
         this.gateHp = this.currentLevel.gateHp;
         this.gateShield = 0;
+        this.tileRefreshing = false;
 
         this.createTitle();
         this.createLevelSelectButtons();
@@ -545,14 +555,37 @@ export class GameManager extends Component {
     }
 
     private checkIdiom() {
+        if (this.tileRefreshing || this.gameOver) return;
+
         const current = this.slots.map(s => s.char).join('');
-        if (current === '万箭齐发') this.releaseWanJianQiFa();
-        else if (current === '固若金汤') this.releaseGuRuoJinTang();
+        if (current === '万箭齐发') {
+            if (!this.canUseSkill('wanjian')) return;
+            this.releaseWanJianQiFa();
+        } else if (current === '固若金汤') {
+            if (!this.canUseSkill('guruo')) return;
+            this.releaseGuRuoJinTang();
+        }
+    }
+
+    private canUseSkill(skill: 'wanjian' | 'guruo'): boolean {
+        const remain = skill === 'wanjian' ? this.wanJianCooldownRemain : this.guRuoCooldownRemain;
+        const name = skill === 'wanjian' ? '万箭齐发' : '固若金汤';
+
+        if (remain > 0.05) {
+            this.createTip(`${name}冷却中：还需 ${Math.ceil(remain)} 秒，已清空成语`);
+            this.createFloatingText('冷却中', 0, 110, new Color(170, 210, 255, 255));
+            this.clearSlotsAndRespawnTiles(0.45, false);
+            return false;
+        }
+
+        return true;
     }
 
     private releaseWanJianQiFa() {
+        this.wanJianCooldownRemain = this.wanJianCooldown;
+
         this.createFloatingText('万箭齐发！', 0, 90, new Color(255, 240, 120, 255));
-        this.createTip('成语释放：万箭齐发，全屏清怪');
+        this.createTip(`成语释放：万箭齐发，全屏清怪，冷却 ${this.wanJianCooldown} 秒`);
 
         const effect = this.createImageNode(
             'effect_arrow_rain',
@@ -582,15 +615,17 @@ export class GameManager extends Component {
             if (enemy && enemy.node && enemy.node.isValid) enemy.takeDamage(9999);
         }
 
-        this.clearSlotsAndRespawnTiles();
+        this.clearSlotsAndRespawnTiles(0.65);
     }
 
     private releaseGuRuoJinTang() {
+        this.guRuoCooldownRemain = this.guRuoCooldown;
+
         this.gateShield += 5;
         this.refreshGateHpLabel();
 
         this.createFloatingText('固若金汤！', this.getGateX(), 135, new Color(120, 220, 255, 255));
-        this.createTip('成语释放：固若金汤，城门获得 5 点护盾');
+        this.createTip(`成语释放：固若金汤，城门获得 5 点护盾，冷却 ${this.guRuoCooldown} 秒`);
 
         const effect = this.createImageNode(
             'effect_blue_shield',
@@ -610,16 +645,25 @@ export class GameManager extends Component {
             .call(() => effect.destroy())
             .start();
 
-        this.clearSlotsAndRespawnTiles();
+        this.clearSlotsAndRespawnTiles(0.55);
     }
 
-    private clearSlotsAndRespawnTiles() {
+    private clearSlotsAndRespawnTiles(delay = 0.55, showRefreshTip = true) {
+        if (this.tileRefreshing) return;
+        this.tileRefreshing = true;
+
         for (const slot of this.slots) {
             if (slot.tile && slot.tile.node && slot.tile.node.isValid) slot.tile.node.destroy();
             slot.char = '';
             slot.tile = null;
         }
-        this.scheduleOnce(() => this.createCharTiles(), 0.3);
+
+        if (showRefreshTip) this.createTip('字块刷新中...');
+        this.scheduleOnce(() => {
+            this.createCharTiles();
+            this.tileRefreshing = false;
+            if (!this.gameOver && showRefreshTip) this.createTip('新字块已刷新');
+        }, delay);
     }
 
     private pickEnemyKind(): EnemyKind {
@@ -928,10 +972,14 @@ export class GameManager extends Component {
     private restartCurrentLevel() {
         this.gateHp = this.currentLevel.gateHp;
         this.gateShield = 0;
+        this.tileRefreshing = false;
         this.spawnedCount = 0;
         this.killedCount = 0;
         this.spawnTimer = 0;
         this.lastCavalryAlertSpawn = -999;
+        this.wanJianCooldownRemain = 0;
+        this.guRuoCooldownRemain = 0;
+        this.tileRefreshing = false;
         this.enemies = [];
         this.gameOver = false;
         this.waveRunning = true;
@@ -957,10 +1005,14 @@ export class GameManager extends Component {
     private returnToLevelSelect() {
         this.gateHp = this.currentLevel.gateHp;
         this.gateShield = 0;
+        this.tileRefreshing = false;
         this.spawnedCount = 0;
         this.killedCount = 0;
         this.spawnTimer = 0;
         this.lastCavalryAlertSpawn = -999;
+        this.wanJianCooldownRemain = 0;
+        this.guRuoCooldownRemain = 0;
+        this.tileRefreshing = false;
         this.enemies = [];
         this.gameOver = false;
         this.waveRunning = false;
