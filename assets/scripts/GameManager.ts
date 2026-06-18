@@ -51,8 +51,11 @@ export class GameManager extends Component {
 
     private wanJianCooldownRemain = 0;
     private guRuoCooldownRemain = 0;
+    private huaDiCooldownRemain = 0;
     private readonly wanJianCooldown = 5.0;
     private readonly guRuoCooldown = 4.0;
+    private readonly huaDiCooldown = 6.0;
+    private readonly huaDiFreezeSeconds = 3.0;
     private tileRefreshing = false;
 
     private gateHpRewardBonus = 0;
@@ -130,6 +133,11 @@ export class GameManager extends Component {
         tile_huo: 'textures/tile_huo',
         tile_tu: 'textures/tile_tu',
 
+        tile_hua: 'textures/tile_hua',
+        tile_di: 'textures/tile_di',
+        tile_wei: 'textures/tile_wei',
+        tile_lao: 'textures/tile_lao',
+
         effect_arrow_rain: 'textures/effect_arrow_rain',
         effect_blue_shield: 'textures/effect_blue_shield',
         fail_popup: 'textures/ui_fail_popup',
@@ -158,7 +166,7 @@ export class GameManager extends Component {
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.4.5.1 启动：奖励双触发修正版');
+        console.log('成语塔防 Demo v0.4.6 启动：新成语「画地为牢」定身技能版');
         GameManager.inst = this;
         this.readCanvasSize();
         this.preloadWalkFrames();
@@ -168,6 +176,7 @@ export class GameManager extends Component {
     update(dt: number) {
         if (this.wanJianCooldownRemain > 0) this.wanJianCooldownRemain = Math.max(0, this.wanJianCooldownRemain - dt);
         if (this.guRuoCooldownRemain > 0) this.guRuoCooldownRemain = Math.max(0, this.guRuoCooldownRemain - dt);
+        if (this.huaDiCooldownRemain > 0) this.huaDiCooldownRemain = Math.max(0, this.huaDiCooldownRemain - dt);
 
         if (this.gameOver || !this.waveRunning) return;
 
@@ -554,7 +563,7 @@ export class GameManager extends Component {
             if (child.name.startsWith('tile_')) child.destroy();
         }
 
-        const chars = ['万', '箭', '齐', '发', '固', '若', '金', '汤', '火', '土'];
+        const chars = ['万', '箭', '齐', '发', '固', '若', '金', '汤', '画', '地', '为', '牢', '火', '土'];
         const pathMap: Record<string, string> = {
             '万': this.texturePath.tile_wan,
             '箭': this.texturePath.tile_jian,
@@ -566,6 +575,10 @@ export class GameManager extends Component {
             '汤': this.texturePath.tile_tang,
             '火': this.texturePath.tile_huo,
             '土': this.texturePath.tile_tu,
+            '画': this.texturePath.tile_hua,
+            '地': this.texturePath.tile_di,
+            '为': this.texturePath.tile_wei,
+            '牢': this.texturePath.tile_lao,
         };
 
         const gap = 96;
@@ -639,12 +652,23 @@ export class GameManager extends Component {
         } else if (current === '固若金汤') {
             if (!this.canUseSkill('guruo')) return;
             this.releaseGuRuoJinTang();
+        } else if (current === '画地为牢') {
+            if (!this.canUseSkill('huadi')) return;
+            this.releaseHuaDiWeiLao();
         }
     }
 
-    private canUseSkill(skill: 'wanjian' | 'guruo'): boolean {
-        const remain = skill === 'wanjian' ? this.wanJianCooldownRemain : this.guRuoCooldownRemain;
-        const name = skill === 'wanjian' ? '万箭齐发' : '固若金汤';
+    private canUseSkill(skill: 'wanjian' | 'guruo' | 'huadi'): boolean {
+        const remain = skill === 'wanjian'
+            ? this.wanJianCooldownRemain
+            : skill === 'guruo'
+                ? this.guRuoCooldownRemain
+                : this.huaDiCooldownRemain;
+        const name = skill === 'wanjian'
+            ? '万箭齐发'
+            : skill === 'guruo'
+                ? '固若金汤'
+                : '画地为牢';
 
         if (remain > 0.05) {
             this.createTip(`${name}冷却中：还需 ${Math.ceil(remain)} 秒，已清空成语`);
@@ -722,6 +746,47 @@ export class GameManager extends Component {
             .start();
 
         this.clearSlotsAndRespawnTiles(0.55);
+    }
+
+    private releaseHuaDiWeiLao() {
+        this.huaDiCooldownRemain = this.huaDiCooldown;
+
+        this.createFloatingText('画地为牢！', 0, 95, new Color(145, 220, 255, 255));
+        this.createTip(`成语释放：画地为牢，敌人定身 ${this.huaDiFreezeSeconds} 秒，冷却 ${this.huaDiCooldown} 秒`);
+
+        this.createFreezeFieldEffect();
+
+        for (const enemy of [...this.enemies]) {
+            if (enemy && enemy.node && enemy.node.isValid) {
+                enemy.freeze(this.huaDiFreezeSeconds);
+            }
+        }
+
+        this.clearSlotsAndRespawnTiles(0.60);
+    }
+
+    private createFreezeFieldEffect() {
+        const field = new Node('freeze_field');
+        field.parent = this.node;
+        field.setPosition(0, 8);
+        field.addComponent(UITransform).setContentSize(this.canvasW - 240, 88);
+
+        const g = field.addComponent(Graphics);
+        g.fillColor = new Color(90, 170, 255, 58);
+        g.roundRect(-(this.canvasW - 240) / 2, -44, this.canvasW - 240, 88, 24);
+        g.fill();
+        g.strokeColor = new Color(150, 220, 255, 150);
+        g.lineWidth = 3;
+        g.roundRect(-(this.canvasW - 240) / 2, -44, this.canvasW - 240, 88, 24);
+        g.stroke();
+
+        tween(field)
+            .to(0.14, { scale: new Vec3(1.03, 1.12, 1) })
+            .to(0.16, { scale: new Vec3(1, 1, 1) })
+            .delay(0.85)
+            .to(0.18, { scale: new Vec3(0.92, 0.92, 1) })
+            .call(() => field.destroy())
+            .start();
     }
 
     private clearSlotsAndRespawnTiles(delay = 0.55, showRefreshTip = true) {
@@ -1176,6 +1241,7 @@ export class GameManager extends Component {
         this.lastCavalryAlertSpawn = -999;
         this.wanJianCooldownRemain = 0;
         this.guRuoCooldownRemain = 0;
+        this.huaDiCooldownRemain = 0;
         this.tileRefreshing = false;
         this.enemies = [];
         this.gameOver = false;
@@ -1212,6 +1278,7 @@ export class GameManager extends Component {
         this.lastCavalryAlertSpawn = -999;
         this.wanJianCooldownRemain = 0;
         this.guRuoCooldownRemain = 0;
+        this.huaDiCooldownRemain = 0;
         this.tileRefreshing = false;
         this.enemies = [];
         this.gameOver = false;

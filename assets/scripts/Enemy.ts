@@ -11,6 +11,7 @@ export class Enemy extends Component {
     private hp = 1;
     private hitX = 145;
     private dead = false;
+    private frozenTimer = 0;
 
     private spriteRoot: Node | null = null;
     private frameNodes: Node[] = [];
@@ -112,6 +113,34 @@ export class Enemy extends Component {
     }
 
 
+    public freeze(seconds: number) {
+        if (this.dead) return;
+
+        this.frozenTimer = Math.max(this.frozenTimer, seconds);
+
+        for (const frame of this.frameNodes) {
+            if (!frame || !frame.isValid) continue;
+            const sprite = frame.getComponent(Sprite);
+            if (sprite) sprite.color = new Color(150, 210, 255, 255);
+        }
+
+        if (this.shadowNode && this.shadowNode.isValid) {
+            this.shadowNode.setScale(1.08, 1.08, 1);
+        }
+    }
+
+    private clearFreezeVisual() {
+        for (const frame of this.frameNodes) {
+            if (!frame || !frame.isValid) continue;
+            const sprite = frame.getComponent(Sprite);
+            if (sprite) sprite.color = Color.WHITE;
+        }
+
+        if (this.shadowNode && this.shadowNode.isValid) {
+            this.shadowNode.setScale(1, 1, 1);
+        }
+    }
+
     private playHitFeedback() {
         if (this.spriteRoot && this.spriteRoot.isValid) {
             for (const frame of this.frameNodes) {
@@ -124,7 +153,11 @@ export class Enemy extends Component {
                 for (const frame of this.frameNodes) {
                     if (!frame || !frame.isValid) continue;
                     const sprite = frame.getComponent(Sprite);
-                    if (sprite) sprite.color = Color.WHITE;
+                    if (sprite) {
+                        sprite.color = this.frozenTimer > 0
+                            ? new Color(150, 210, 255, 255)
+                            : Color.WHITE;
+                    }
                 }
             }, 0.08);
         }
@@ -137,6 +170,12 @@ export class Enemy extends Component {
 
     update(dt: number) {
         if (this.dead) return;
+
+        if (this.frozenTimer > 0) {
+            this.frozenTimer = Math.max(0, this.frozenTimer - dt);
+            if (this.frozenTimer <= 0) this.clearFreezeVisual();
+            return;
+        }
 
         const p = this.node.position;
         const nextX = Math.round((p.x + this.speed * dt) * 2) / 2;
