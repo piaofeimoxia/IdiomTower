@@ -54,27 +54,30 @@ export class GameManager extends Component {
     private readonly levelConfigs = [
         {
             name: '第 1 关',
-            desc: '只出现普通士兵，熟悉拖字块和释放成语',
-            totalEnemies: 12,
-            gateHp: 12,
+            desc: '教学关：只出现普通士兵，节奏更慢，方便熟悉拖字块',
+            totalEnemies: 10,
+            gateHp: 14,
+            spawnInterval: 1.35,
             shieldEvery: 0,
             cavalryEvery: 0,
         },
         {
             name: '第 2 关',
-            desc: '加入盾兵：血量更高、速度更慢',
-            totalEnemies: 16,
-            gateHp: 12,
-            shieldEvery: 5,
+            desc: '压力关：加入盾兵，敌人数量提升，但节奏仍可控',
+            totalEnemies: 15,
+            gateHp: 13,
+            spawnInterval: 1.16,
+            shieldEvery: 4,
             cavalryEvery: 0,
         },
         {
             name: '第 3 关',
-            desc: '加入骑兵：特大号最终尺寸，保留白块修复',
-            totalEnemies: 20,
+            desc: '挑战关：盾兵和骑兵同时出现，节奏更快',
+            totalEnemies: 21,
             gateHp: 12,
-            shieldEvery: 5,
-            cavalryEvery: 6,
+            spawnInterval: 0.98,
+            shieldEvery: 4,
+            cavalryEvery: 5,
         },
     ];
 
@@ -143,7 +146,7 @@ export class GameManager extends Component {
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.4.1 启动：受击反馈 + 骑兵来袭提示');
+        console.log('成语塔防 Demo v0.4.2 启动：三关数值节奏调整版');
         GameManager.inst = this;
         this.readCanvasSize();
         this.preloadWalkFrames();
@@ -157,7 +160,7 @@ export class GameManager extends Component {
         if (!this.walkFramesReady) return;
 
         this.spawnTimer += dt;
-        if (this.spawnedCount < this.currentLevel.totalEnemies && this.spawnTimer >= 1.08) {
+        if (this.spawnedCount < this.currentLevel.totalEnemies && this.spawnTimer >= this.currentLevel.spawnInterval) {
             this.spawnTimer = 0;
             this.spawnEnemy();
         }
@@ -183,7 +186,7 @@ export class GameManager extends Component {
             if (doneCount >= 3) {
                 this.walkFramesReady = true;
                 if (this.currentLevelIndex === 2) {
-                    this.createTip('第 3 关：骑兵速度更快，优先用「万箭齐发」清场');
+                    this.createTip('第 3 关：骑兵更频繁，优先用「万箭齐发」清场');
                 } else {
                     this.createTip(`${this.currentLevel.name}：${this.currentLevel.desc}`);
                 }
@@ -272,7 +275,7 @@ export class GameManager extends Component {
 
         if (this.walkFramesReady) {
             if (this.currentLevelIndex === 2) {
-                this.createTip('第 3 关：骑兵速度更快，优先用「万箭齐发」清场');
+                this.createTip('第 3 关：骑兵更频繁，优先用「万箭齐发」清场');
             } else {
                 this.createTip(`${this.currentLevel.name}：${this.currentLevel.desc}`);
             }
@@ -701,12 +704,21 @@ export class GameManager extends Component {
         }
 
         if (kind === 'shield') {
-            enemy.init(34 + Math.random() * 8, 3, 1, this.getEnemyHitX());
+            // 盾兵：第 2 关开始出现，速度慢、血量高，用来逼玩家释放技能。
+            const shieldSpeed = this.currentLevelIndex >= 2 ? 38 + Math.random() * 7 : 32 + Math.random() * 6;
+            const shieldHp = this.currentLevelIndex >= 2 ? 4 : 3;
+            enemy.init(shieldSpeed, shieldHp, 1, this.getEnemyHitX());
         } else if (kind === 'cavalry') {
-            // 骑兵：第 3 关解锁，速度快，血量低，主要制造紧张感
-            enemy.init(56 + Math.random() * 6, 1, 1, this.getEnemyHitX());
+            // 骑兵：第 3 关压迫型敌人，速度快但血量低。
+            enemy.init(64 + Math.random() * 8, 1, 1, this.getEnemyHitX());
         } else {
-            enemy.init(45 + Math.random() * 18, 1, 1, this.getEnemyHitX());
+            // 普通兵：随关卡略微加速，第 1 关保持教学友好。
+            const basicSpeed = this.currentLevelIndex === 0
+                ? 38 + Math.random() * 10
+                : this.currentLevelIndex === 1
+                    ? 44 + Math.random() * 12
+                    : 50 + Math.random() * 14;
+            enemy.init(basicSpeed, 1, 1, this.getEnemyHitX());
         }
 
         this.enemies.push(enemy);
