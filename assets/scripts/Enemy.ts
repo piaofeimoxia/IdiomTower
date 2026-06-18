@@ -18,7 +18,7 @@ export class Enemy extends Component {
 
     private animTimer = 0;
     private seqIndex = 0;
-    private motionType: 'basic' | 'shield' = 'basic';
+    private motionType: 'basic' | 'shield' | 'cavalry' = 'basic';
 
     // 普通兵：用 3 姿态往返循环，避开最别扭的一帧，让走路更顺眼
     private readonly basicSequence = [0, 1, 2, 1];
@@ -27,6 +27,10 @@ export class Enemy extends Component {
     // 盾兵：保留目前更自然的 4 帧完整循环
     private readonly shieldSequence = [0, 1, 2, 3];
     private readonly shieldDurations = [0.18, 0.10, 0.18, 0.10];
+
+    // 骑兵：完整 4 帧循环，主要依靠马腿变化表现步态，避免上下浮动。
+    private readonly cavalrySequence = [0, 1, 2, 3];
+    private readonly cavalryDurations = [0.16, 0.12, 0.16, 0.12];
 
     public init(speed: number, hp = 1, damage = 1, hitX = 145) {
         this.speed = speed;
@@ -37,7 +41,7 @@ export class Enemy extends Component {
         this.applyFramePose();
     }
 
-    public setAnimatedNodes(spriteRoot: Node, frameNodes: Node[], _fps = 4, motionType: 'basic' | 'shield' = 'basic') {
+    public setAnimatedNodes(spriteRoot: Node, frameNodes: Node[], _fps = 4, motionType: 'basic' | 'shield' | 'cavalry' = 'basic') {
         this.spriteRoot = spriteRoot;
         this.frameNodes = frameNodes || [];
         this.motionType = motionType;
@@ -48,25 +52,31 @@ export class Enemy extends Component {
     }
 
     private getSequence(): number[] {
-        return this.motionType === 'shield' ? this.shieldSequence : this.basicSequence;
+        if (this.motionType === 'shield') return this.shieldSequence;
+        if (this.motionType === 'cavalry') return this.cavalrySequence;
+        return this.basicSequence;
     }
 
     private getDurations(): number[] {
-        return this.motionType === 'shield' ? this.shieldDurations : this.basicDurations;
+        if (this.motionType === 'shield') return this.shieldDurations;
+        if (this.motionType === 'cavalry') return this.cavalryDurations;
+        return this.basicDurations;
     }
 
     private createShadow() {
         this.shadowNode = new Node('enemy_shadow');
         this.shadowNode.parent = this.node;
         this.shadowNode.setSiblingIndex(0);
-        this.shadowNode.setPosition(0, -24);
+
+        const isCavalry = this.motionType === 'cavalry';
+        this.shadowNode.setPosition(0, isCavalry ? -36 : -24);
 
         const ui = this.shadowNode.addComponent(UITransform);
-        ui.setContentSize(34, 10);
+        ui.setContentSize(isCavalry ? 84 : 34, isCavalry ? 18 : 10);
 
         const g = this.shadowNode.addComponent(Graphics);
         g.fillColor = new Color(0, 0, 0, 72);
-        g.ellipse(0, 0, 15, 4);
+        g.ellipse(0, 0, isCavalry ? 39 : 15, isCavalry ? 8.0 : 4);
         g.fill();
     }
 
@@ -81,14 +91,22 @@ export class Enemy extends Component {
             if (f && f.isValid) f.active = i === frameIndex;
         }
 
-        // 只做很轻的重心变化
+        // 骑兵避免上下漂浮；步兵只保留极轻的重心变化。
         if (this.spriteRoot && this.spriteRoot.isValid) {
-            const yOffset = (frameIndex === 1 || frameIndex === 3) ? 1 : 0;
+            let yOffset = 0;
+            if (this.motionType !== 'cavalry') {
+                yOffset = (frameIndex === 1 || frameIndex === 3) ? 1 : 0;
+            }
             this.spriteRoot.setPosition(0, yOffset, 0);
         }
 
         if (this.shadowNode && this.shadowNode.isValid) {
-            const scaleX = (frameIndex === 1 || frameIndex === 3) ? 0.92 : 1.0;
+            let scaleX = 1.0;
+            if (this.motionType === 'cavalry') {
+                scaleX = (frameIndex === 1 || frameIndex === 3) ? 0.97 : 1.02;
+            } else {
+                scaleX = (frameIndex === 1 || frameIndex === 3) ? 0.92 : 1.0;
+            }
             this.shadowNode.setScale(scaleX, 1, 1);
         }
     }

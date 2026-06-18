@@ -29,6 +29,8 @@ type AnimatedEnemyNode = {
     frames: Node[];
 };
 
+type EnemyKind = 'basic' | 'shield' | 'cavalry';
+
 @ccclass('GameManager')
 export class GameManager extends Component {
     public static inst: GameManager;
@@ -46,7 +48,38 @@ export class GameManager extends Component {
     private gameOver = false;
     private walkFramesReady = false;
 
-    private readonly totalEnemies = 18;
+    private currentLevelIndex = 0;
+
+    private readonly levelConfigs = [
+        {
+            name: '第 1 关',
+            desc: '只出现普通士兵，熟悉拖字块和释放成语',
+            totalEnemies: 12,
+            gateHp: 12,
+            shieldEvery: 0,
+            cavalryEvery: 0,
+        },
+        {
+            name: '第 2 关',
+            desc: '加入盾兵：血量更高、速度更慢',
+            totalEnemies: 16,
+            gateHp: 12,
+            shieldEvery: 5,
+            cavalryEvery: 0,
+        },
+        {
+            name: '第 3 关',
+            desc: '加入骑兵：源图特大号，显示166x132',
+            totalEnemies: 20,
+            gateHp: 12,
+            shieldEvery: 5,
+            cavalryEvery: 6,
+        },
+    ];
+
+    private get currentLevel() {
+        return this.levelConfigs[this.currentLevelIndex];
+    }
 
     private gateHpLabel: Label | null = null;
     private waveLabel: Label | null = null;
@@ -57,6 +90,7 @@ export class GameManager extends Component {
 
     private basicWalkFrames: SpriteFrame[] = [];
     private shieldWalkFrames: SpriteFrame[] = [];
+    private cavalryWalkFrames: SpriteFrame[] = [];
 
     /**
      * 所有 PNG 统一放在：
@@ -88,6 +122,7 @@ export class GameManager extends Component {
 
         enemy_basic_soldier: 'textures/enemy_basic_soldier',
         enemy_shield_soldier: 'textures/enemy_shield_soldier',
+        enemy_cavalry: 'textures/enemy_cavalry',
         enemy_bing_fallback: 'textures/enemy_bing',
 
         enemy_basic_walk_0: 'textures/enemy_basic_walk_0',
@@ -99,10 +134,15 @@ export class GameManager extends Component {
         enemy_shield_walk_1: 'textures/enemy_shield_walk_1',
         enemy_shield_walk_2: 'textures/enemy_shield_walk_2',
         enemy_shield_walk_3: 'textures/enemy_shield_walk_3',
+
+        enemy_cavalry_walk_0: 'textures/enemy_cavalry_walk_0',
+        enemy_cavalry_walk_1: 'textures/enemy_cavalry_walk_1',
+        enemy_cavalry_walk_2: 'textures/enemy_cavalry_walk_2',
+        enemy_cavalry_walk_3: 'textures/enemy_cavalry_walk_3',
     };
 
     onLoad() {
-        console.log('成语塔防 Demo v0.2.13 启动：普通兵走路优化版');
+        console.log('成语塔防 Demo v0.3.9 启动：骑兵源图尺寸档位 特大号');
         GameManager.inst = this;
         this.readCanvasSize();
         this.preloadWalkFrames();
@@ -116,12 +156,12 @@ export class GameManager extends Component {
         if (!this.walkFramesReady) return;
 
         this.spawnTimer += dt;
-        if (this.spawnedCount < this.totalEnemies && this.spawnTimer >= 1.08) {
+        if (this.spawnedCount < this.currentLevel.totalEnemies && this.spawnTimer >= 1.08) {
             this.spawnTimer = 0;
             this.spawnEnemy();
         }
 
-        if (this.spawnedCount >= this.totalEnemies && this.enemies.length <= 0) {
+        if (this.spawnedCount >= this.currentLevel.totalEnemies && this.enemies.length <= 0) {
             this.showResult('守城成功！点击重新开始', true);
         }
     }
@@ -139,10 +179,10 @@ export class GameManager extends Component {
         let doneCount = 0;
         const doneOne = () => {
             doneCount++;
-            if (doneCount >= 2) {
+            if (doneCount >= 3) {
                 this.walkFramesReady = true;
-                this.createTip('v0.2.13：盾兵保留当前步态，普通兵改为更顺眼的往返步态');
-                console.log(`走路帧加载完成：basic=${this.basicWalkFrames.length}, shield=${this.shieldWalkFrames.length}`);
+                this.createTip(`${this.currentLevel.name}：${this.currentLevel.desc}`);
+                console.log(`走路帧加载完成：basic=${this.basicWalkFrames.length}, shield=${this.shieldWalkFrames.length}, cavalry=${this.cavalryWalkFrames.length}`);
             }
         };
 
@@ -168,6 +208,19 @@ export class GameManager extends Component {
             ],
             frames => {
                 this.shieldWalkFrames = frames;
+                doneOne();
+            }
+        );
+
+        this.loadSpriteFrameList(
+            [
+                this.texturePath.enemy_cavalry_walk_0,
+                this.texturePath.enemy_cavalry_walk_1,
+                this.texturePath.enemy_cavalry_walk_2,
+                this.texturePath.enemy_cavalry_walk_3,
+            ],
+            frames => {
+                this.cavalryWalkFrames = frames;
                 doneOne();
             }
         );
@@ -202,15 +255,18 @@ export class GameManager extends Component {
         this.tipLabel = null;
         this.gateHpLabel = null;
         this.waveLabel = null;
+        this.gateHp = this.currentLevel.gateHp;
+        this.gateShield = 0;
 
         this.createTitle();
+        this.createLevelSelectButtons();
         this.createGroundScene();
         this.createGate();
         this.createSlots();
         this.createCharTiles();
 
         if (this.walkFramesReady) {
-            this.createTip('v0.2.13：只重点优化普通小兵走路自然度');
+            this.createTip(`${this.currentLevel.name}：${this.currentLevel.desc}`);
         } else {
             this.createTip('正在加载走路动画帧...');
         }
@@ -239,12 +295,42 @@ export class GameManager extends Component {
 
         this.waveLabel = this.createText(
             'wave',
-            '敌人：0/' + this.totalEnemies,
-            -this.canvasW / 2 + 160,
+            `${this.currentLevel.name}  敌人：0/${this.currentLevel.totalEnemies}`,
+            -this.canvasW / 2 + 205,
             topY - 58,
             24,
             Color.WHITE
         ).getComponent(Label);
+    }
+
+
+    private createLevelSelectButtons() {
+        const topY = this.canvasH / 2 - 122;
+        const startX = -this.canvasW / 2 + 130;
+        const gap = 122;
+
+        for (let i = 0; i < this.levelConfigs.length; i++) {
+            const selected = i === this.currentLevelIndex;
+            const btn = this.createBox(
+                `level_btn_${i + 1}`,
+                startX + i * gap,
+                topY,
+                106,
+                36,
+                selected ? new Color(92, 78, 45, 235) : new Color(38, 45, 58, 215),
+                `第${i + 1}关`,
+                18
+            );
+
+            btn.on(Node.EventType.TOUCH_END, () => this.selectLevel(i), this);
+            btn.on(Node.EventType.MOUSE_UP, () => this.selectLevel(i), this);
+        }
+    }
+
+    private selectLevel(index: number) {
+        if (index < 0 || index >= this.levelConfigs.length) return;
+        this.currentLevelIndex = index;
+        this.restartCurrentLevel();
     }
 
     private createGroundScene() {
@@ -524,38 +610,71 @@ export class GameManager extends Component {
         this.scheduleOnce(() => this.createCharTiles(), 0.3);
     }
 
+    private pickEnemyKind(): EnemyKind {
+        const level = this.currentLevel;
+        const orderNo = this.spawnedCount + 1;
+
+        // 第 3 关开始解锁骑兵，优先级高于盾兵
+        if (level.cavalryEvery > 0 && orderNo % level.cavalryEvery === 0) {
+            return 'cavalry';
+        }
+
+        // 第 2 关开始解锁盾兵
+        if (level.shieldEvery > 0 && orderNo % level.shieldEvery === 0) {
+            return 'shield';
+        }
+
+        return 'basic';
+    }
+
     private spawnEnemy() {
         const startX = -this.canvasW / 2 + 120;
         const lanes = [-22, -6, 10, 26, 42];
         const y = lanes[Math.floor(Math.random() * lanes.length)];
 
-        const isShieldEnemy = this.spawnedCount > 0 && this.spawnedCount % 5 === 0;
-        const enemyName = isShieldEnemy ? 'enemy_shield' : 'enemy_basic';
+        const kind = this.pickEnemyKind();
+        const enemyName = `enemy_${kind}`;
 
         let enemyNode: Node;
         let spriteRoot: Node | null = null;
         let frameNodes: Node[] = [];
 
-        if (isShieldEnemy && this.shieldWalkFrames.length >= 2) {
+        if (kind === 'shield' && this.shieldWalkFrames.length >= 2) {
             const data = this.createAnimatedEnemyNode(`${enemyName}_${this.spawnedCount}`, this.shieldWalkFrames, startX, y, 88, 88);
             enemyNode = data.node;
             spriteRoot = data.spriteRoot;
             frameNodes = data.frames;
-        } else if (!isShieldEnemy && this.basicWalkFrames.length >= 2) {
+        } else if (kind === 'basic' && this.basicWalkFrames.length >= 2) {
             const data = this.createAnimatedEnemyNode(`${enemyName}_${this.spawnedCount}`, this.basicWalkFrames, startX, y, 82, 82);
             enemyNode = data.node;
             spriteRoot = data.spriteRoot;
             frameNodes = data.frames;
+        } else if (kind === 'cavalry' && this.cavalryWalkFrames.length >= 2) {
+            const data = this.createAnimatedEnemyNode(`${enemyName}_${this.spawnedCount}`, this.cavalryWalkFrames, startX, y + 1, 166, 132);
+            enemyNode = data.node;
+            spriteRoot = data.spriteRoot;
+            frameNodes = data.frames;
+        } else if (kind === 'cavalry') {
+            enemyNode = this.createImageNode(
+                `${enemyName}_${this.spawnedCount}`,
+                [this.texturePath.enemy_cavalry, this.texturePath.enemy_basic_soldier, this.texturePath.enemy_bing_fallback],
+                startX,
+                y + 1,
+                166,
+                132,
+                '骑',
+                28
+            );
         } else {
             enemyNode = this.createImageNode(
                 `${enemyName}_${this.spawnedCount}`,
-                isShieldEnemy
+                kind === 'shield'
                     ? [this.texturePath.enemy_shield_soldier, this.texturePath.enemy_basic_soldier]
                     : [this.texturePath.enemy_basic_soldier, this.texturePath.enemy_bing_fallback],
                 startX,
                 y,
-                isShieldEnemy ? 88 : 82,
-                isShieldEnemy ? 88 : 82,
+                kind === 'shield' ? 88 : 82,
+                kind === 'shield' ? 88 : 82,
                 '兵',
                 28
             );
@@ -564,16 +683,25 @@ export class GameManager extends Component {
         const enemy = enemyNode.addComponent(Enemy);
 
         if (frameNodes.length > 0 && spriteRoot) {
-            enemy.setAnimatedNodes(spriteRoot, frameNodes, 4, isShieldEnemy ? 'shield' : 'basic');
+            const motionType = kind === 'shield' ? 'shield' : kind === 'cavalry' ? 'cavalry' : 'basic';
+            enemy.setAnimatedNodes(spriteRoot, frameNodes, 4, motionType);
         }
 
-        if (isShieldEnemy) enemy.init(34 + Math.random() * 8, 3, 1, this.getEnemyHitX());
-        else enemy.init(45 + Math.random() * 18, 1, 1, this.getEnemyHitX());
+        if (kind === 'shield') {
+            enemy.init(34 + Math.random() * 8, 3, 1, this.getEnemyHitX());
+        } else if (kind === 'cavalry') {
+            // 骑兵：第 3 关解锁，速度快，血量低，主要制造紧张感
+            enemy.init(56 + Math.random() * 6, 1, 1, this.getEnemyHitX());
+        } else {
+            enemy.init(45 + Math.random() * 18, 1, 1, this.getEnemyHitX());
+        }
 
         this.enemies.push(enemy);
         this.spawnedCount++;
 
-        if (this.waveLabel) this.waveLabel.string = `敌人：${this.spawnedCount}/${this.totalEnemies}`;
+        if (this.waveLabel) {
+            this.waveLabel.string = `${this.currentLevel.name}  敌人：${this.spawnedCount}/${this.currentLevel.totalEnemies}`;
+        }
     }
 
     private createAnimatedEnemyNode(name: string, frames: SpriteFrame[], x: number, y: number, w: number, h: number): AnimatedEnemyNode {
@@ -639,20 +767,42 @@ export class GameManager extends Component {
         if (this.gameOver) return;
         this.gameOver = true;
 
-        let panel: Node;
-        if (!success) {
-            panel = this.createImageNode('result', [this.texturePath.fail_popup], 0, 0, 560, 220, msg, 32);
-        } else {
-            panel = this.createBox('result', 0, 0, 560, 185, new Color(40, 45, 55, 240), '', 34);
-            this.createText('result_text', msg, 0, 0, 34, new Color(255, 240, 180, 255));
+        let finalMsg = msg;
+        if (success) {
+            if (this.currentLevelIndex < this.levelConfigs.length - 1) {
+                finalMsg = `${this.currentLevel.name} 胜利！点击进入下一关`;
+            } else {
+                finalMsg = `全部关卡通关！点击从第 1 关重新开始`;
+            }
         }
 
-        panel.on(Node.EventType.TOUCH_END, () => this.restart(), this);
-        panel.on(Node.EventType.MOUSE_UP, () => this.restart(), this);
+        let panel: Node;
+        if (!success) {
+            panel = this.createImageNode('result', [this.texturePath.fail_popup], 0, 0, 560, 220, finalMsg, 32);
+        } else {
+            panel = this.createBox('result', 0, 0, 650, 190, new Color(40, 45, 55, 240), '', 34);
+            this.createText('result_text', finalMsg, 0, 0, 32, new Color(255, 240, 180, 255));
+        }
+
+        panel.on(Node.EventType.TOUCH_END, () => {
+            if (success) {
+                this.goNextLevel();
+            } else {
+                this.restartCurrentLevel();
+            }
+        }, this);
+
+        panel.on(Node.EventType.MOUSE_UP, () => {
+            if (success) {
+                this.goNextLevel();
+            } else {
+                this.restartCurrentLevel();
+            }
+        }, this);
     }
 
-    private restart() {
-        this.gateHp = 12;
+    private restartCurrentLevel() {
+        this.gateHp = this.currentLevel.gateHp;
         this.gateShield = 0;
         this.spawnedCount = 0;
         this.killedCount = 0;
@@ -662,6 +812,16 @@ export class GameManager extends Component {
         this.waveRunning = true;
         this.readCanvasSize();
         this.setupScene();
+    }
+
+    private goNextLevel() {
+        if (this.currentLevelIndex < this.levelConfigs.length - 1) {
+            this.currentLevelIndex++;
+        } else {
+            this.currentLevelIndex = 0;
+        }
+
+        this.restartCurrentLevel();
     }
 
     private createTip(text: string) {
