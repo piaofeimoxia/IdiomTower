@@ -1,0 +1,193 @@
+diff --git a/assets/scripts/GameManager.ts b/assets/scripts/GameManager.ts
+--- a/assets/scripts/GameManager.ts
++++ b/assets/scripts/GameManager.ts
+@@
+ import { CharTile } from './CharTile';
+ import { Enemy } from './Enemy';
++import {
++    LetterSystem,
++    DEFAULT_STARTER_LETTERS,
++    REWARD_LETTER_PACKS,
++} from './systems/LetterSystem';
+@@
+ export class GameManager extends Component {
+     public static inst: GameManager;
+ 
+     private slots: SlotData[] = [];
+     private enemies: Enemy[] = [];
++
++    /** v0.5.3：真实字流系统。不要再直接用固定 chars 数组。 */
++    private letterSystem = new LetterSystem();
++    private lastRenderedQueueKey = '';
+@@
+     onLoad() {
+-        console.log('成语塔防 Demo v0.4.8.8 启动：弓兵真实拉弓动画版');
++        console.log('成语塔防 Demo v0.5.3 启动：字流构筑版');
+         GameManager.inst = this;
+         this.readCanvasSize();
++        this.initLetterSystem();
+         this.preloadWalkFrames();
+         this.setupScene();
+     }
+ 
+     update(dt: number) {
+@@
+         if (this.huaDiCooldownRemain > 0) this.huaDiCooldownRemain = Math.max(0, this.huaDiCooldownRemain - dt);
++
++        // v0.5.3：候选字一个一个出现。
++        if (!this.gameOver && !this.tileRefreshing) {
++            this.letterSystem.tick(dt);
++        }
+@@
+     }
++
++    private initLetterSystem() {
++        this.letterSystem.init({
++            queueSize: 8,
++            spawnInterval: 0.75,
++            baseLetters: DEFAULT_STARTER_LETTERS,
++            fillQueueOnInit: false,
++            allowDuplicateInQueue: true,
++        });
++
++        this.letterSystem.onQueueChanged(() => {
++            if (this.tileRefreshing || this.gameOver) return;
++            this.renderLetterQueue();
++        });
++    }
+@@
+     private setupScene() {
+@@
+         this.createGate();
+         this.createSlots();
+-        this.createCharTiles();
++        this.letterSystem.reset();
++        this.renderLetterQueue();
+@@
+     }
+@@
+-    private createCharTiles() {
++    /**
++     * 旧版 createCharTiles 是固定刷一整套字：万箭齐发、固若金汤、画地为牢。
++     * v0.5.3 改为根据 LetterSystem.queue 渲染候选字。
++     */
++    private renderLetterQueue() {
+         for (const child of [...this.node.children]) {
+             if (child.name.startsWith('tile_')) child.destroy();
+         }
+ 
+-        const chars = ['万', '箭', '齐', '发', '固', '若', '金', '汤', '画', '地', '为', '牢', '火', '土'];
++        const chars = this.letterSystem.getQueue();
++        const queueKey = chars.join('|');
++        if (queueKey === this.lastRenderedQueueKey) return;
++        this.lastRenderedQueueKey = queueKey;
++
+         const pathMap: Record<string, string> = {
+             '万': this.texturePath.tile_wan,
+             '箭': this.texturePath.tile_jian,
+             '齐': this.texturePath.tile_qi,
+             '发': this.texturePath.tile_fa,
+@@
+             '为': this.texturePath.tile_wei,
+             '牢': this.texturePath.tile_lao,
+         };
+@@
+             const tileNode = this.createImageNode(
+                 `tile_${ch}_${i}`,
+-                [pathMap[ch]],
++                pathMap[ch] ? [pathMap[ch]] : [],
+                 x,
+                 y,
+@@
+             const tile = tileNode.addComponent(CharTile);
+             tile.init(ch, tileNode.position.clone());
+         }
+     }
++
++    /** 保留旧函数名，避免其他地方调用报错。 */
++    private createCharTiles() {
++        this.renderLetterQueue();
++    }
+@@
+         targetSlot.tile = tile;
+         targetSlot.char = tile.char;
+         tile.lockToSlot(targetIndex, targetSlot.node.position.clone());
++
++        // 从候选队列里消耗这个字。这样队列会在后续 tick 中一个一个补字。
++        this.letterSystem.consumeChar(tile.char);
+ 
+         this.checkIdiom();
+         return true;
+     }
+@@
+         const current = this.slots.map(s => s.char).join('');
+-        if (current === '万箭齐发') {
++        if (current === '百步穿杨') {
++            this.releaseBaiBuChuanYang();
++        } else if (current === '万箭齐发') {
+             if (!this.canUseSkill('wanjian')) return;
+             this.releaseWanJianQiFa();
+@@
+         }
+     }
++
++    /** 开局基础技能：单体伤害。用于替代一开局就能组万箭齐发。 */
++    private releaseBaiBuChuanYang() {
++        this.createFloatingText('百步穿杨！', 0, 90, new Color(255, 240, 120, 255));
++        this.createTip('成语释放：百步穿杨，对最靠近城门的敌人造成单体伤害');
++
++        const target = [...this.enemies]
++            .filter(e => e && e.node && e.node.isValid)
++            .sort((a, b) => b.node.position.x - a.node.position.x)[0];
++
++        if (target) {
++            target.takeDamage(2);
++            this.createHitBurst(target.node.position.x, target.node.position.y + 24, new Color(255, 230, 120, 210), 42);
++        } else {
++            this.createFloatingText('暂无目标', 0, 40, new Color(180, 220, 255, 255));
++        }
++
++        this.clearSlotsAndRespawnTiles(0.25, false);
++    }
+@@
+         if (showRefreshTip) this.createTip('字块刷新中...');
+         this.scheduleOnce(() => {
+-            this.createCharTiles();
++            this.renderLetterQueue();
+             this.tileRefreshing = false;
+-            if (!this.gameOver && showRefreshTip) this.createTip('新字块已刷新');
++            if (!this.gameOver && showRefreshTip) this.createTip('候选字继续出现');
+         }, delay);
+     }
+@@
+         const rewardCards = [
++            {
++                name: 'reward_wanjian_letters',
++                title: '字包：万箭齐发',
++                desc: '加入 万/箭/齐/发，可构筑全屏箭雨',
++                pick: () => {
++                    this.letterSystem.addRewardLetters(REWARD_LETTER_PACKS['万箭齐发']);
++                    this.showRewardPickedFeedback('已选择：万箭齐发字包', '已加入 万/箭/齐/发');
++                }
++            },
++            {
++                name: 'reward_guruo_letters',
++                title: '字包：固若金汤',
++                desc: '加入 固/若/金/汤，可构筑护盾技能',
++                pick: () => {
++                    this.letterSystem.addRewardLetters(REWARD_LETTER_PACKS['固若金汤']);
++                    this.showRewardPickedFeedback('已选择：固若金汤字包', '已加入 固/若/金/汤');
++                }
++            },
++            {
++                name: 'reward_huadi_letters',
++                title: '字包：画地为牢',
++                desc: '加入 画/地/为/牢，可构筑控制技能',
++                pick: () => {
++                    this.letterSystem.addRewardLetters(REWARD_LETTER_PACKS['画地为牢']);
++                    this.showRewardPickedFeedback('已选择：画地为牢字包', '已加入 画/地/为/牢');
++                }
++            },
+             {
+                 name: 'reward_gate',
+                 title: '城门修复',
