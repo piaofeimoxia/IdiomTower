@@ -1,0 +1,102 @@
+{
+  "version": "v0.5.1",
+  "design_type": "system_upgrade",
+
+  "core_goal": "将v0.5构筑系统升级为可长期游玩的节奏型Roguelike塔防",
+
+  "systems": {
+
+    "letter_system_upgrade": {
+      "base_mode": "bag_queue",
+      "pollution_system": {
+        "enabled": true,
+        "start_wave": 3,
+        "pollution_letters": ["的", "了", "在", "是", "不"],
+        "pollution_ratio_curve": "0.0 -> 0.25 -> 0.5 -> 0.7",
+        "effect": "增加干扰字比例，降低成语构筑稳定性"
+      },
+      "weight_dynamics": {
+        "early_game_bias": {
+          "万": 1.4,
+          "箭": 1.4,
+          "火": 1.3
+        },
+        "late_game_flat": true
+      }
+    },
+
+    "wave_system": {
+      "wave_curve": "difficulty = base * (1.18 ^ wave)",
+      "enemy_spawn_curve": {
+        "formula": "count = 5 + wave * 2.2",
+        "cap": 80
+      },
+      "pressure_model": {
+        "early": "low_pressure_learning",
+        "mid": "combo_introduction",
+        "late": "overload_control_check"
+      }
+    },
+
+    "idiom_unlock_system": {
+      "unlock_curve": "exponential_softcap",
+      "formula": "unlock_cost = 3 + (idiom_index ^ 1.35)",
+      "phases": {
+        "early": ["万箭齐发", "固若金汤", "火上浇油", "画地为牢"],
+        "mid": ["草木皆兵", "围魏救赵", "声东击西", "釜底抽薪"],
+        "late": ["千军万马", "雷霆万钧", "破釜沉舟", "背水一战"]
+      }
+    },
+
+    "reward_balance_v5": {
+      "distribution": {
+        "LETTER": 0.5,
+        "EFFECT": 0.3,
+        "IDIOM": 0.2
+      },
+      "adaptive_bias": {
+        "low_power_player": "increase_IDIOM_drop",
+        "high_power_player": "increase_LETTER_pollution"
+      }
+    },
+
+    "boss_system": {
+      "design_principle": "each_boss_changes_rules_not_numbers",
+
+      "bosses": [
+        {
+          "name": "乱字妖师",
+          "mechanic": "shuffle_current_queue",
+          "counter": "声东击西 / 围魏救赵"
+        },
+        {
+          "name": "火城督军",
+          "mechanic": "map_fire_zone",
+          "counter": "固若金汤 / 以逸待劳"
+        },
+        {
+          "name": "断词将军",
+          "mechanic": "break_idiom_pattern",
+          "counter": "高频短成语流"
+        }
+      ]
+    },
+
+    "pacing_system": {
+      "stage_curve": {
+        "stage1": "waves 1-3 tutorial stabilization",
+        "stage2": "waves 4-8 system introduction",
+        "stage3": "waves 9-15 synergy building",
+        "stage4": "waves 16+ overload mastery"
+      },
+      "player_power_curve": "linear_growth_with_spikes",
+      "difficulty_spikes": [5, 10, 15]
+    }
+  },
+
+  "meta": {
+    "goal": "让玩家从拼字操作进入策略构筑",
+    "key_shift": "operation -> decision making",
+    "target_platform": "wechat / douyin mini game"
+  }
+}
