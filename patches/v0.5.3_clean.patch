@@ -1,0 +1,99 @@
+diff --git a/assets/scripts/GameManager.ts b/assets/scripts/GameManager.ts
+--- a/assets/scripts/GameManager.ts
++++ b/assets/scripts/GameManager.ts
+@@
+ import { Component, Color } from 'cc';
+ import { CharTile } from './CharTile';
+ import { Enemy } from './Enemy';
++import { LetterSystem, DEFAULT_STARTER_LETTERS, REWARD_LETTER_PACKS } from './systems/LetterSystem';
+@@
+ export class GameManager extends Component {
+     public static inst: GameManager;
+ 
+     private slots: SlotData[] = [];
+     private enemies: Enemy[] = [];
++
++    private letterSystem: LetterSystem = new LetterSystem();
++    private lastRenderedQueueKey: string = '';
+@@
+     onLoad() {
+-        console.log('成语塔防 Demo 启动');
++        console.log('成语塔防 v0.5.3 字流系统启动');
+         GameManager.inst = this;
+         this.readCanvasSize();
++        this.initLetterSystem();
+         this.preloadWalkFrames();
+         this.setupScene();
+     }
+ 
+     update(dt: number) {
++        if (!this.gameOver && !this.tileRefreshing) {
++            this.letterSystem.tick(dt);
++        }
+     }
++
++    private initLetterSystem() {
++        this.letterSystem.init({
++            queueSize: 8,
++            spawnInterval: 0.75,
++            baseLetters: DEFAULT_STARTER_LETTERS,
++            fillQueueOnInit: false,
++            allowDuplicateInQueue: true,
++        });
++
++        this.letterSystem.onQueueChanged(() => {
++            if (this.gameOver || this.tileRefreshing) return;
++            this.renderLetterQueue();
++        });
++    }
+@@
+     private setupScene() {
+-        this.createCharTiles();
++        this.letterSystem.reset();
++        this.renderLetterQueue();
+     }
+@@
+-    private createCharTiles() {
+-        const chars = ['万','箭','齐','发','固','若','金','汤','画','地','为','牢'];
++    private renderLetterQueue() {
++        const chars = this.letterSystem.getQueue();
++        const key = chars.join('|');
++        if (key === this.lastRenderedQueueKey) return;
++        this.lastRenderedQueueKey = key;
++
++        for (const child of [...this.node.children]) {
++            if (child.name.startsWith('tile_')) child.destroy();
++        }
++
+         const pathMap: Record<string, string> = {
+             '万': this.texturePath.tile_wan,
+             '箭': this.texturePath.tile_jian,
+             '齐': this.texturePath.tile_qi,
+             '发': this.texturePath.tile_fa,
++            '百': this.texturePath.tile_bai,
++            '步': this.texturePath.tile_bu,
++            '穿': this.texturePath.tile_chuan,
++            '杨': this.texturePath.tile_yang,
+         };
+ 
+         const gap = 96;
+         const y = -this.canvasH / 2 + 80;
+ 
+         chars.forEach((ch, i) => {
+             const x = -200 + i * gap;
+             const node = this.createImageNode(`tile_${ch}_${i}`, pathMap[ch] ? [pathMap[ch]] : [], x, y, 76, 76, ch, 32);
+             const tile = node.addComponent(CharTile);
+             tile.init(ch, node.position.clone());
+         });
+     }
+@@
+     private placeTileToSlot(tile: CharTile, index: number) {
+         const slot = this.slots[index];
+         slot.tile = tile;
+         slot.char = tile.char;
+         tile.lockToSlot(index, slot.node.position.clone());
++
++        this.letterSystem.consumeChar(tile.char);
+         this.checkIdiom();
+     }
+ }
