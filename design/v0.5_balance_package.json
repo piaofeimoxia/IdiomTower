@@ -1,0 +1,78 @@
+{
+  "version": "v0.5",
+  "design_type": "balance_package",
+
+  "letterSystem": {
+    "queueSize": 8,
+    "bagShuffleMode": "fisher_yates",
+    "spawnIntervalSec": 0.6,
+    "letterPool": [
+      {"letter": "万", "weight": 1.2},
+      {"letter": "箭", "weight": 1.2},
+      {"letter": "齐", "weight": 1.0},
+      {"letter": "发", "weight": 1.0},
+      {"letter": "火", "weight": 1.3},
+      {"letter": "上", "weight": 1.0},
+      {"letter": "浇", "weight": 0.9},
+      {"letter": "油", "weight": 0.9},
+      {"letter": "固", "weight": 1.1},
+      {"letter": "若", "weight": 1.0},
+      {"letter": "金", "weight": 1.1},
+      {"letter": "汤", "weight": 1.0},
+      {"letter": "草", "weight": 1.0},
+      {"letter": "木", "weight": 1.0},
+      {"letter": "皆", "weight": 1.0},
+      {"letter": "兵", "weight": 1.1}
+    ]
+  },
+
+  "rewardSystem": {
+    "choicesPerWave": 3,
+    "rewardWeights": {
+      "LETTER": 0.45,
+      "EFFECT": 0.35,
+      "IDIOM": 0.2
+    },
+    "effectUpgradeScale": 1.15
+  },
+
+  "idioms": [
+    {"id": "万箭齐发", "pattern": ["万","箭","齐","发"], "type": "damage", "basePower": 100},
+    {"id": "火上浇油", "pattern": ["火","上","浇","油"], "type": "burn", "basePower": 80},
+    {"id": "固若金汤", "pattern": ["固","若","金","汤"], "type": "defense", "baseShield": 120},
+    {"id": "画地为牢", "pattern": ["画","地","为","牢"], "type": "control", "duration": 3},
+    {"id": "草木皆兵", "pattern": ["草","木","皆","兵"], "type": "summon", "unitCount": 3},
+    {"id": "千军万马", "pattern": ["千","军","万","马"], "type": "summon", "unitCount": 8},
+    {"id": "百步穿杨", "pattern": ["百","步","穿","杨"], "type": "damage", "basePower": 90},
+    {"id": "箭无虚发", "pattern": ["箭","无","虚","发"], "type": "damage", "critRate": 0.3},
+    {"id": "风卷残云", "pattern": ["风","卷","残","云"], "type": "aoe", "basePower": 110},
+    {"id": "釜底抽薪", "pattern": ["釜","底","抽","薪"], "type": "debuff", "attackDown": 0.3},
+    {"id": "声东击西", "pattern": ["声","东","击","西"], "type": "control", "confuse": true},
+    {"id": "围魏救赵", "pattern": ["围","魏","救","赵"], "type": "control", "redirectAggro": true},
+    {"id": "安如泰山", "pattern": ["安","如","泰","山"], "type": "defense", "baseShield": 150},
+    {"id": "铜墙铁壁", "pattern": ["铜","墙","铁","壁"], "type": "defense", "baseShield": 140},
+    {"id": "烈火燎原", "pattern": ["烈","火","燎","原"], "type": "burn", "basePower": 130},
+    {"id": "起死回生", "pattern": ["起","死","回","生"], "type": "heal", "heal": 100},
+    {"id": "锦上添花", "pattern": ["锦","上","添","花"], "type": "buff", "buffAll": 0.2},
+    {"id": "如虎添翼", "pattern": ["如","虎","添","翼"], "type": "buff", "attackSpeed": 0.25},
+    {"id": "破釜沉舟", "pattern": ["破","釜","沉","舟"], "type": "burst", "lowHpScale": true},
+    {"id": "背水一战", "pattern": ["背","水","一","战"], "type": "burst", "lowHpBoost": 0.4},
+    {"id": "草船借箭", "pattern": ["草","船","借","箭"], "type": "special", "reflect": true},
+    {"id": "以逸待劳", "pattern": ["以","逸","待","劳"], "type": "buff", "cooldownReduce": 0.2},
+    {"id": "调虎离山", "pattern": ["调","虎","离","山"], "type": "control", "pullEnemies": true},
+    {"id": "暗度陈仓", "pattern": ["暗","度","陈","仓"], "type": "control", "stealth": true},
+    {"id": "一箭双雕", "pattern": ["一","箭","双","雕"], "type": "damage", "targetCount": 2},
+    {"id": "万马奔腾", "pattern": ["万","马","奔","腾"], "type": "summon", "unitCount": 6},
+    {"id": "攻其不备", "pattern": ["攻","其","不","备"], "type": "damage", "bonusFirstHit": 0.5},
+    {"id": "出其不意", "pattern": ["出","其","不","意"], "type": "control", "surprise": true},
+    {"id": "一夫当关", "pattern": ["一","夫","当","关"], "type": "defense", "singleBlock": true},
+    {"id": "万众一心", "pattern": ["万","众","一","心"], "type": "buff", "teamAttack": 0.15},
+    {"id": "势如破竹", "pattern": ["势","如","破","竹"], "type": "damage", "rampUp": true},
+    {"id": "雷霆万钧", "pattern": ["雷","霆","万","钧"], "type": "aoe", "basePower": 150},
+    {"id": "移花接木", "pattern": ["移","花","接","木"], "type": "control", "swap": true},
+    {"id": "借刀杀人", "pattern": ["借","刀","杀","人"], "type": "control", "enemyDamageBoost": true},
+    {"id": "偷梁换柱", "pattern": ["偷","梁","换","柱"], "type": "control", "disrupt": true},
+    {"id": "一鼓作气", "pattern": ["一","鼓","作","气"], "type": "buff", "damageBoost": 0.2},
+    {"id": "乘胜追击", "pattern": ["乘","胜","追","击"], "type": "buff", "stacking": true}
+  ]
+}
