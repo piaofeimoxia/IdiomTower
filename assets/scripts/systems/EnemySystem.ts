@@ -15,7 +15,7 @@ export type EnemyState = {
 export type EnemyRemovedReason = 'dead' | 'base_hit';
 
 /**
- * v0.8.2 敌人正式路径系统。
+ * v0.8.3 敌人正式路径系统。
  *
  * 只负责敌人数据、路径移动、到达终点判定。
  * 不直接创建 Cocos 节点，渲染交给 ViewSystem。
@@ -51,7 +51,7 @@ export class EnemySystem {
         };
 
         this.enemies.push(enemy);
-        console.log(`[EnemySystem v0.8.2] spawned #${enemy.id} ${enemy.type}`);
+        console.log(`[EnemySystem v0.8.3] spawned #${enemy.id} ${enemy.type}`);
         this.onEnemySpawned?.(this.cloneEnemy(enemy));
     }
 
@@ -136,7 +136,7 @@ export class EnemySystem {
         this.enemies = this.enemies.filter(e => e.id !== enemy.id);
 
         if (reason === 'base_hit') {
-            console.log(`[EnemySystem v0.8.2] enemy #${enemy.id} reached base`);
+            console.log(`[EnemySystem v0.8.3] enemy #${enemy.id} reached base`);
             this.onBaseHit?.(this.cloneEnemy(enemy));
         }
 
