@@ -38,9 +38,9 @@ export class ViewSystem {
         this.createHud();
         this.createSlots();
         this.createCharTiles();
-        this.showTip('v0.8.3：地面、城门、成语槽、字块已接回');
+        this.showTip('v0.8.3.1：已恢复旧版横向路径平面');
 
-        console.log('[ViewSystem v0.8.3] initialized');
+        console.log('[ViewSystem v0.8.3.1] initialized');
     }
 
     public updateHud(text: string) {
@@ -89,7 +89,7 @@ export class ViewSystem {
 
         this.enemyViews.set(enemy.id, { node, hpFill });
         this.updateEnemy(enemy);
-        console.log(`[ViewSystem v0.8.3] enemy created: #${enemy.id} ${enemy.type}`);
+        console.log(`[ViewSystem v0.8.3.1] enemy created: #${enemy.id} ${enemy.type}`);
     }
 
     public updateEnemy(enemy: EnemyState) {
@@ -104,7 +104,7 @@ export class ViewSystem {
         if (!view) return;
         this.enemyViews.delete(enemy.id);
         if (view.node.isValid) view.node.destroy();
-        console.log(`[ViewSystem v0.8.3] enemy removed: #${enemy.id}, reason=${reason}`);
+        console.log(`[ViewSystem v0.8.3.1] enemy removed: #${enemy.id}, reason=${reason}`);
     }
 
     public clear() {
@@ -125,11 +125,11 @@ export class ViewSystem {
     }
 
     private recreateViewRoot(root: Node) {
-        for (const name of ['VIEW_ROOT_v0_8_3', 'VIEW_ROOT_v0_8_2', 'VIEW_ROOT_v0_8_1']) {
+        for (const name of ['VIEW_ROOT_v0_8_3_1', 'VIEW_ROOT_v0_8_3', 'VIEW_ROOT_v0_8_2', 'VIEW_ROOT_v0_8_1']) {
             const old = root.getChildByName(name);
             if (old && old.isValid) old.destroy();
         }
-        const viewRoot = new Node('VIEW_ROOT_v0_8_3');
+        const viewRoot = new Node('VIEW_ROOT_v0_8_3_1');
         viewRoot.addComponent(UITransform).setContentSize(1280, 720);
         root.addChild(viewRoot);
         this.viewRoot = viewRoot;
@@ -157,30 +157,31 @@ export class ViewSystem {
 
     private createPath() {
         if (!this.viewRoot || this.path.length < 2) return;
-        const pathNode = new Node('enemy_path');
+        const pathNode = new Node('enemy_path_flat');
         this.viewRoot.addChild(pathNode);
         const g = pathNode.addComponent(Graphics);
-        g.lineWidth = 12;
-        g.strokeColor = new Color(80, 95, 125, 255);
+        g.lineWidth = 10;
+        g.strokeColor = new Color(96, 112, 145, 255);
         g.moveTo(this.path[0].x, this.path[0].y);
         for (let i = 1; i < this.path.length; i++) g.lineTo(this.path[i].x, this.path[i].y);
         g.stroke();
     }
 
     private createGate() {
-        const p = this.path.length > 0 ? this.path[this.path.length - 1] : new Vec3(520, 120, 0);
-        this.createRoundBox('gate_body', p.x, p.y + 8, 118, 132, new Color(118, 70, 48, 255), '城门', 26, 12);
-        this.createRoundBox('gate_top', p.x, p.y + 85, 142, 32, new Color(150, 96, 58, 255), '', 0, 8);
-        const label = this.createText('gate_hp', '城门血量：10/10', p.x, p.y + 118, 22, Color.WHITE);
+        const gateX = this.path.length > 0 ? this.path[this.path.length - 1].x : 400;
+        const gateY = 74;
+        this.createRoundBox('gate_body', gateX, gateY, 118, 132, new Color(118, 70, 48, 255), '城门', 26, 12);
+        this.createRoundBox('gate_top', gateX, gateY + 77, 142, 32, new Color(150, 96, 58, 255), '', 0, 8);
+        const label = this.createText('gate_hp', '城门血量：10/10', gateX, gateY + 125, 22, Color.WHITE);
         this.gateLabel = label.getComponent(Label);
     }
 
     private createTitle() {
-        this.createText('title', '成语塔防 v0.8.3 - 地面/城门/字块接回版', 0, 305, 31, new Color(255, 230, 120, 255));
+        this.createText('title', '成语塔防 v0.8.3.1 - 旧版平面路径修复版', 0, 305, 31, new Color(255, 230, 120, 255));
     }
 
     private createHud() {
-        this.hudLabel = this.createText('hud', 'SystemManager v0.8.3 ready...', 0, 255, 20, new Color(190, 220, 255, 255)).getComponent(Label);
+        this.hudLabel = this.createText('hud', 'SystemManager v0.8.3.1 ready...', 0, 255, 20, new Color(190, 220, 255, 255)).getComponent(Label);
         this.tipLabel = this.createText('tip', '', 0, 225, 20, new Color(255, 230, 170, 255)).getComponent(Label);
     }
 
