@@ -14,6 +14,10 @@ import {
 } from 'cc';
 import { CharTile } from './CharTile';
 import { Enemy } from './Enemy';
+import { LevelSystem } from './systems/LevelSystem';
+import { SkillSystem } from './systems/SkillSystem';
+import { WaveSystem } from './systems/WaveSystem';
+import { EnemySystem } from './systems/EnemySystem';
 
 const { ccclass } = _decorator;
 
@@ -38,6 +42,11 @@ export class GameManager extends Component {
 
     private slots: SlotData[] = [];
     private enemies: Enemy[] = [];
+
+    private levelSystem = new LevelSystem();
+    private skillSystem = new SkillSystem();
+    private enemySystem = new EnemySystem();
+    private waveSystem = new WaveSystem({name:'L1',totalEnemies:10,spawnInterval:1.2});
 
     private gateHp = 12;
     private gateShield = 0;
