@@ -15,7 +15,7 @@ export type SpawnPayload = {
 };
 
 /**
- * v0.8.2 稳定刷怪系统。
+ * v0.8.3 稳定刷怪系统。
  *
  * 仍然不依赖 EventBus。
  * WaveSystem 只负责按时间产生 spawn 回调，由 SystemManager 接到 EnemySystem。
@@ -47,7 +47,7 @@ export class WaveSystem {
         this.spawned = 0;
         this.running = true;
 
-        console.log(`[WaveSystem v0.8.2] start: ${this.level.name}`);
+        console.log(`[WaveSystem v0.8.3] start: ${this.level.name}`);
         this.onWaveStart?.(this.level);
     }
 
@@ -56,7 +56,6 @@ export class WaveSystem {
 
         this.timer += dt;
 
-        // 用 while 防止低帧率时漏刷，但通常一次只刷一个。
         while (this.timer >= this.level.spawnInterval && this.spawned < this.level.totalEnemies) {
             this.timer -= this.level.spawnInterval;
             this.spawned++;
@@ -69,13 +68,13 @@ export class WaveSystem {
                 type,
             };
 
-            console.log(`[WaveSystem v0.8.2] spawn ${type} ${payload.index}/${payload.total}`);
+            console.log(`[WaveSystem v0.8.3] spawn ${type} ${payload.index}/${payload.total}`);
             this.onSpawn?.(type, payload);
         }
 
         if (this.spawned >= this.level.totalEnemies) {
             this.running = false;
-            console.log(`[WaveSystem v0.8.2] complete: ${this.level.name}`);
+            console.log(`[WaveSystem v0.8.3] complete: ${this.level.name}`);
             this.onWaveComplete?.(this.level);
         }
     }
@@ -92,7 +91,7 @@ export class WaveSystem {
 
     private buildLevel(level?: Partial<LevelConfig>): LevelConfig {
         return {
-            name: level?.name ?? 'v0.8.2_path_wave',
+            name: level?.name ?? 'v0.8.3_ui_wave',
             totalEnemies: level?.totalEnemies ?? 40,
             spawnInterval: level?.spawnInterval ?? 1.0,
             enemyTypes: level?.enemyTypes ?? ['basic', 'shield', 'basic', 'cavalry', 'archer'],
