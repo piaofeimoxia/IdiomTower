@@ -3,6 +3,8 @@ import { WaveSystem } from './systems/WaveSystem';
 import { SkillSystem } from './systems/SkillSystem';
 import { EnemySystem } from './systems/EnemySystem';
 import { LetterSystem } from './systems/LetterSystem';
+import { ViewSystem } from './systems/ViewSystem';
+import { Node } from 'cc';
 
 export class SystemManager {
 
@@ -11,20 +13,24 @@ export class SystemManager {
     public skillSystem = new SkillSystem();
     public enemySystem = new EnemySystem();
     public letterSystem = new LetterSystem();
+    public viewSystem = new ViewSystem();
 
     constructor() {
         this.waveSystem = new WaveSystem(this.levelSystem.current);
 
-        // Wave -> Enemy bridge
+        // Wave -> systems bridge (render + logic)
         this.waveSystem.onSpawn = (type: string) => {
-            if (this.enemySystem && this.enemySystem.spawnEnemy) {
-                this.enemySystem.spawnEnemy(type);
-            }
+            this.enemySystem.spawnEnemy?.(type);
+            this.viewSystem.spawnEnemy(type);
         };
     }
 
-    initLevel() {
+    initLevel(root: Node) {
+        // bind render root (Canvas)
+        this.viewSystem.init(root);
+
         this.waveSystem.reset(this.levelSystem.current);
+
         if (this.levelSystem.init) {
             this.levelSystem.init();
         }
