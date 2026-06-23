@@ -4,9 +4,9 @@ import { EnemySystem } from './systems/EnemySystem';
 import { ViewSystem } from './systems/ViewSystem';
 
 /**
- * v0.8.5.2 稳定系统管理器。
+ * v0.8.5.3 稳定系统管理器。
  *
- * 保留 v0.8.5.1 贴图显示修复，并接回旧版敌人行走动画和移动节奏。
+ * 保留 v0.8.5.2 行走动画接回，并修复普通兵走动时头部忽大忽小的问题。
  */
 export class SystemManager {
 
@@ -26,7 +26,7 @@ export class SystemManager {
 
     constructor() {
         const level: Partial<LevelConfig> = {
-            name: 'v0.8.5.2_walk_anim_wave',
+            name: 'v0.8.5.3_frame_sequence_wave',
             totalEnemies: 40,
             spawnInterval: 1.0,
             enemyTypes: ['basic', 'shield', 'basic', 'cavalry', 'archer'],
@@ -70,7 +70,7 @@ export class SystemManager {
     }
 
     public initLevel(root: Node) {
-        console.log('[SystemManager v0.8.5.2] initLevel');
+        console.log('[SystemManager v0.8.5.3] initLevel');
 
         this.baseLife = this.maxBaseLife;
         this.baseShield = 0;
@@ -78,7 +78,7 @@ export class SystemManager {
         this.viewSystem.updateGate(this.baseLife, this.maxBaseLife, this.baseShield);
         this.enemySystem.clear();
         this.waveSystem.reset({
-            name: 'v0.8.5.2_walk_anim_wave',
+            name: 'v0.8.5.3_frame_sequence_wave',
             totalEnemies: 40,
             spawnInterval: 1.0,
             enemyTypes: ['basic', 'shield', 'basic', 'cavalry', 'archer'],
@@ -131,7 +131,7 @@ export class SystemManager {
         }
 
         this.viewSystem.showTip(`万箭齐发！命中 ${results.length} 个敌人`);
-        console.log(`[SystemManager v0.8.5.2] skill 万箭齐发 hit=${results.length}`);
+        console.log(`[SystemManager v0.8.5.3] skill 万箭齐发 hit=${results.length}`);
     }
 
     private releaseGuRuoJinTang() {
@@ -140,7 +140,7 @@ export class SystemManager {
         this.viewSystem.updateGate(this.baseLife, this.maxBaseLife, this.baseShield);
         this.viewSystem.showShieldEffect();
         this.viewSystem.showTip(`固若金汤！城门获得 ${shieldAmount} 点护盾`);
-        console.log(`[SystemManager v0.8.5.2] skill 固若金汤 shield=${this.baseShield}`);
+        console.log(`[SystemManager v0.8.5.3] skill 固若金汤 shield=${this.baseShield}`);
     }
 
     private releaseHuaDiWeiLao() {
@@ -148,7 +148,7 @@ export class SystemManager {
         const count = this.enemySystem.freezeAll(freezeSeconds);
         this.viewSystem.showFreezeEffect(freezeSeconds);
         this.viewSystem.showTip(`画地为牢！冻结 ${count} 个敌人 ${freezeSeconds} 秒`);
-        console.log(`[SystemManager v0.8.5.2] skill 画地为牢 freeze=${count}`);
+        console.log(`[SystemManager v0.8.5.3] skill 画地为牢 freeze=${count}`);
     }
 
     private applyBaseDamage(damage: number, reason: string) {
@@ -167,6 +167,6 @@ export class SystemManager {
         }
 
         this.viewSystem.updateGate(this.baseLife, this.maxBaseLife, this.baseShield);
-        console.log(`[SystemManager v0.8.5.2] base damage=${damage}, life=${this.baseLife}, shield=${this.baseShield}`);
+        console.log(`[SystemManager v0.8.5.3] base damage=${damage}, life=${this.baseLife}, shield=${this.baseShield}`);
     }
 }
