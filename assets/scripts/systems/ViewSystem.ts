@@ -3,19 +3,26 @@ import type { EnemyState, EnemyRemovedReason } from './EnemySystem';
 
 export type PathPoint = Vec3;
 
-type EnemyView = { node: Node; hpFill: Graphics };
+type EnemyView = {
+    node: Node;
+    hpFill: Graphics;
+    sprite: Sprite | null;
+    frames: SpriteFrame[];
+    frameIndex: number;
+    lastFrameTime: number;
+};
 type SlotView = { node: Node; char: string; tile: TileView | null };
 type TileView = { node: Node; char: string; homePos: Vec3; slotIndex: number; dragging: boolean };
 type EnemyVisualSize = { w: number; h: number; fallback: string };
 
 /**
- * ViewSystem v0.8.5.1
+ * ViewSystem v0.8.5.2
  *
  * 修复重点：
- * - 贴图加载成功时只显示 Sprite，不再叠加 Graphics 方块和大字。
- * - 贴图加载失败时才显示 fallback 方块和文字。
- * - 尺寸按旧版 GameManager 恢复。
- * - 使用固定层级：背景 < 地面 < 敌人 < 城门 < UI < 技能。
+ * - 敌人不再使用静态大图，而是恢复旧版 walk_0~walk_3 行走动画帧。
+ * - 动画帧加载成功时只显示动画 Sprite，不叠加编号、方块和静态图。
+ * - 贴图失败时才显示 fallback 方块和文字。
+ * - 尺寸、层级、地面、城门、字块继续沿用 v0.8.5.1 修正版。
  */
 export class ViewSystem {
     private root: Node | null = null;
@@ -65,6 +72,26 @@ export class ViewSystem {
         enemy_archer: 'textures/enemy_archer',
         enemy_bing_fallback: 'textures/enemy_bing',
 
+        enemy_basic_walk_0: 'textures/enemy_basic_walk_0',
+        enemy_basic_walk_1: 'textures/enemy_basic_walk_1',
+        enemy_basic_walk_2: 'textures/enemy_basic_walk_2',
+        enemy_basic_walk_3: 'textures/enemy_basic_walk_3',
+
+        enemy_shield_walk_0: 'textures/enemy_shield_walk_0',
+        enemy_shield_walk_1: 'textures/enemy_shield_walk_1',
+        enemy_shield_walk_2: 'textures/enemy_shield_walk_2',
+        enemy_shield_walk_3: 'textures/enemy_shield_walk_3',
+
+        enemy_cavalry_walk_0: 'textures/enemy_cavalry_walk_0',
+        enemy_cavalry_walk_1: 'textures/enemy_cavalry_walk_1',
+        enemy_cavalry_walk_2: 'textures/enemy_cavalry_walk_2',
+        enemy_cavalry_walk_3: 'textures/enemy_cavalry_walk_3',
+
+        enemy_archer_walk_0: 'textures/enemy_archer_walk_0',
+        enemy_archer_walk_1: 'textures/enemy_archer_walk_1',
+        enemy_archer_walk_2: 'textures/enemy_archer_walk_2',
+        enemy_archer_walk_3: 'textures/enemy_archer_walk_3',
+
         effect_arrow_rain: 'textures/effect_arrow_rain',
         effect_blue_shield: 'textures/effect_blue_shield',
     };
@@ -85,9 +112,9 @@ export class ViewSystem {
         this.createHud();
         this.createSlots();
         this.createCharTiles();
-        this.showTip('v0.8.5.1：贴图显示已修正，成功加载时不再叠加方块和文字');
+        this.showTip('v0.8.5.2：已恢复旧版行走动画帧，避免静态贴图白块');
 
-        console.log('[ViewSystem v0.8.5.1] initialized');
+        console.log('[ViewSystem v0.8.5.2] initialized');
     }
 
     public updateHud(text: string) {
@@ -109,44 +136,70 @@ export class ViewSystem {
         if (!this.enemyLayer) return;
 
         const size = this.getEnemyVisualSize(enemy.type);
-        const paths = this.getEnemyTexturePaths(enemy.type);
-        const node = this.createImageNode(
-            this.enemyLayer,
-            `enemy_${enemy.type}_${enemy.id}`,
-            paths,
-            enemy.position.x,
-            enemy.position.y,
-            size.w,
-            size.h,
-            size.fallback,
-            28
-        );
+        const node = new Node(`enemy_${enemy.type}_${enemy.id}`);
+        this.enemyLayer.addChild(node);
+        node.setPosition(enemy.position.x, enemy.position.y + this.getEnemyYOffset(enemy.type));
+        node.addComponent(UITransform).setContentSize(size.w, size.h);
 
+        const spriteRoot = new Node(`${node.name}_sprite_root`);
+        node.addChild(spriteRoot);
+        spriteRoot.setPosition(0, 0, 0);
+        spriteRoot.addComponent(UITransform).setContentSize(size.w, size.h);
+        const sprite = spriteRoot.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+
+        const hpWidth = Math.min(size.w, 88);
         const hpBgNode = new Node('hp_bg');
         node.addChild(hpBgNode);
         hpBgNode.setPosition(new Vec3(0, size.h / 2 + 8, 0));
-        hpBgNode.addComponent(UITransform).setContentSize(Math.min(size.w, 88), 8);
+        hpBgNode.addComponent(UITransform).setContentSize(hpWidth, 8);
         const hpBg = hpBgNode.addComponent(Graphics);
         hpBg.fillColor = new Color(35, 35, 35, 255);
-        hpBg.rect(-Math.min(size.w, 88) / 2, -4, Math.min(size.w, 88), 8);
+        hpBg.rect(-hpWidth / 2, -4, hpWidth, 8);
         hpBg.fill();
 
         const hpFillNode = new Node('hp_fill');
         node.addChild(hpFillNode);
         hpFillNode.setPosition(new Vec3(0, size.h / 2 + 8, 0));
-        hpFillNode.addComponent(UITransform).setContentSize(Math.min(size.w, 88), 8);
+        hpFillNode.addComponent(UITransform).setContentSize(hpWidth, 8);
         const hpFill = hpFillNode.addComponent(Graphics);
 
-        this.enemyViews.set(enemy.id, { node, hpFill });
+        const view: EnemyView = {
+            node,
+            hpFill,
+            sprite,
+            frames: [],
+            frameIndex: 0,
+            lastFrameTime: Date.now(),
+        };
+        this.enemyViews.set(enemy.id, view);
+
+        this.loadSpriteFrameList(this.getEnemyWalkFramePaths(enemy.type), frames => {
+            if (!node.isValid || !spriteRoot.isValid) return;
+
+            if (frames.length > 0) {
+                view.frames = frames;
+                view.frameIndex = 0;
+                sprite.spriteFrame = frames[0];
+                console.log(`[ViewSystem v0.8.5.2] walk frames loaded: ${enemy.type}, count=${frames.length}`);
+            } else {
+                // 只有动画帧全失败时才回退静态图；再失败才显示文字方块。
+                this.tryLoadSprite(this.getEnemyTexturePaths(enemy.type), 0, spriteRoot, size.w, size.h, () => {
+                    this.createFallbackBox(spriteRoot, size.w, size.h, size.fallback, 28);
+                });
+            }
+        });
+
         this.updateEnemy(enemy);
         this.refreshEnemyDepthOrder();
-        console.log(`[ViewSystem v0.8.5.1] enemy created: #${enemy.id} ${enemy.type}`);
+        console.log(`[ViewSystem v0.8.5.2] enemy created: #${enemy.id} ${enemy.type}`);
     }
 
     public updateEnemy(enemy: EnemyState) {
         const view = this.enemyViews.get(enemy.id);
         if (!view || !view.node.isValid) return;
-        view.node.setPosition(enemy.position);
+        view.node.setPosition(enemy.position.x, enemy.position.y + this.getEnemyYOffset(enemy.type));
+        this.animateEnemyView(view, enemy);
         this.drawHp(view.hpFill, enemy);
         this.refreshEnemyDepthOrder();
     }
@@ -156,7 +209,7 @@ export class ViewSystem {
         if (!view) return;
         this.enemyViews.delete(enemy.id);
         if (view.node.isValid) view.node.destroy();
-        console.log(`[ViewSystem v0.8.5.1] enemy removed: #${enemy.id}, reason=${reason}`);
+        console.log(`[ViewSystem v0.8.5.2] enemy removed: #${enemy.id}, reason=${reason}`);
     }
 
     public showArrowRainEffect() {
@@ -278,12 +331,12 @@ export class ViewSystem {
     }
 
     private recreateViewRoot(root: Node) {
-        for (const name of ['VIEW_ROOT_v0_8_5_1', 'VIEW_ROOT_v0_8_5', 'VIEW_ROOT_v0_8_4', 'VIEW_ROOT_v0_8_3_1', 'VIEW_ROOT_v0_8_3', 'VIEW_ROOT_v0_8_2', 'VIEW_ROOT_v0_8_1']) {
+        for (const name of ['VIEW_ROOT_v0_8_5_2', 'VIEW_ROOT_v0_8_5_1', 'VIEW_ROOT_v0_8_5', 'VIEW_ROOT_v0_8_4', 'VIEW_ROOT_v0_8_3_1', 'VIEW_ROOT_v0_8_3', 'VIEW_ROOT_v0_8_2', 'VIEW_ROOT_v0_8_1']) {
             const old = root.getChildByName(name);
             if (old && old.isValid) old.destroy();
         }
 
-        const viewRoot = new Node('VIEW_ROOT_v0_8_5_1');
+        const viewRoot = new Node('VIEW_ROOT_v0_8_5_2');
         viewRoot.addComponent(UITransform).setContentSize(1280, 720);
         root.addChild(viewRoot);
         this.viewRoot = viewRoot;
@@ -369,7 +422,7 @@ export class ViewSystem {
     }
 
     private createHud() {
-        this.hudLabel = this.createText(this.uiLayer, 'hud', 'SystemManager v0.8.5.1 ready...', 0, 255, 20, new Color(190, 220, 255, 255)).getComponent(Label);
+        this.hudLabel = this.createText(this.uiLayer, 'hud', 'SystemManager v0.8.5.2 ready...', 0, 255, 20, new Color(190, 220, 255, 255)).getComponent(Label);
         this.tipLabel = this.createText(this.uiLayer, 'tip', '', 0, 225, 20, new Color(255, 230, 170, 255)).getComponent(Label);
     }
 
@@ -515,7 +568,7 @@ export class ViewSystem {
         const path = `${resourcePaths[index]}/spriteFrame`;
         resources.load(path, SpriteFrame, (err, spriteFrame) => {
             if (err || !spriteFrame) {
-                console.warn(`[ViewSystem v0.8.5.1] texture load failed: ${path}`);
+                console.warn(`[ViewSystem v0.8.5.2] texture load failed: ${path}`);
                 this.tryLoadSprite(resourcePaths, index + 1, spriteNode, w, h, onFail);
                 return;
             }
@@ -527,6 +580,31 @@ export class ViewSystem {
             sprite.sizeMode = Sprite.SizeMode.CUSTOM;
             const ui = spriteNode.getComponent(UITransform);
             if (ui) ui.setContentSize(w, h);
+        });
+    }
+
+    private loadSpriteFrameList(paths: string[], done: (frames: SpriteFrame[]) => void) {
+        const frames: SpriteFrame[] = new Array(paths.length);
+        let remain = paths.length;
+
+        if (paths.length === 0) {
+            done([]);
+            return;
+        }
+
+        paths.forEach((p, index) => {
+            resources.load(`${p}/spriteFrame`, SpriteFrame, (err, spriteFrame) => {
+                remain--;
+                if (!err && spriteFrame) {
+                    frames[index] = spriteFrame;
+                } else {
+                    console.warn(`[ViewSystem v0.8.5.2] walk frame load failed: ${p}/spriteFrame`);
+                }
+
+                if (remain <= 0) {
+                    done(frames.filter(Boolean));
+                }
+            });
         });
     }
 
@@ -584,6 +662,24 @@ export class ViewSystem {
             .start();
     }
 
+    private animateEnemyView(view: EnemyView, enemy: EnemyState) {
+        if (!view.sprite || view.frames.length <= 1) return;
+
+        if (enemy.frozenRemain > 0) {
+            view.frameIndex = 0;
+            view.sprite.spriteFrame = view.frames[0];
+            return;
+        }
+
+        const now = Date.now();
+        const interval = enemy.type === 'cavalry' ? 90 : 125;
+        if (now - view.lastFrameTime < interval) return;
+
+        view.lastFrameTime = now;
+        view.frameIndex = (view.frameIndex + 1) % view.frames.length;
+        view.sprite.spriteFrame = view.frames[view.frameIndex];
+    }
+
     private drawHp(g: Graphics, enemy: EnemyState) {
         const size = this.getEnemyVisualSize(enemy.type);
         const width = Math.min(size.w, 88);
@@ -617,6 +713,47 @@ export class ViewSystem {
         if (type === 'cavalry') return { w: 166, h: 132, fallback: '骑' };
         if (type === 'archer') return { w: 92, h: 92, fallback: '弓' };
         return { w: 82, h: 82, fallback: '兵' };
+    }
+
+    private getEnemyYOffset(type: EnemyState['type']) {
+        if (type === 'cavalry') return 1;
+        return 0;
+    }
+
+    private getEnemyWalkFramePaths(type: EnemyState['type']) {
+        if (type === 'shield') {
+            return [
+                this.texturePath.enemy_shield_walk_0,
+                this.texturePath.enemy_shield_walk_1,
+                this.texturePath.enemy_shield_walk_2,
+                this.texturePath.enemy_shield_walk_3,
+            ];
+        }
+
+        if (type === 'cavalry') {
+            return [
+                this.texturePath.enemy_cavalry_walk_0,
+                this.texturePath.enemy_cavalry_walk_1,
+                this.texturePath.enemy_cavalry_walk_2,
+                this.texturePath.enemy_cavalry_walk_3,
+            ];
+        }
+
+        if (type === 'archer') {
+            return [
+                this.texturePath.enemy_archer_walk_0,
+                this.texturePath.enemy_archer_walk_1,
+                this.texturePath.enemy_archer_walk_2,
+                this.texturePath.enemy_archer_walk_3,
+            ];
+        }
+
+        return [
+            this.texturePath.enemy_basic_walk_0,
+            this.texturePath.enemy_basic_walk_1,
+            this.texturePath.enemy_basic_walk_2,
+            this.texturePath.enemy_basic_walk_3,
+        ];
     }
 
     private getEnemyTexturePaths(type: EnemyState['type']) {
