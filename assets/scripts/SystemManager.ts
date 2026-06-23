@@ -4,10 +4,9 @@ import { EnemySystem } from './systems/EnemySystem';
 import { ViewSystem } from './systems/ViewSystem';
 
 /**
- * v0.8.3 稳定系统管理器。
+ * v0.8.3.1 稳定系统管理器。
  *
- * 本版保留 v0.8.2 敌人路径，并接回旧版地面、城门、成语槽、字块。
- * 技能实际效果暂不接回，下一版 v0.8.4 再接。
+ * 修复点：把 v0.8.2/v0.8.3 的折线路径改回旧版横向路径平面。
  */
 export class SystemManager {
 
@@ -19,18 +18,15 @@ export class SystemManager {
     private baseLife = 10;
     private readonly maxBaseLife = 10;
 
+    // 旧版平面路径：敌人从左侧横向推进到右侧城门。
     private readonly path = [
-        new Vec3(-560, 120, 0),
-        new Vec3(-300, 120, 0),
-        new Vec3(-300, -80, 0),
-        new Vec3(40, -80, 0),
-        new Vec3(40, 120, 0),
-        new Vec3(560, 120, 0),
+        new Vec3(-560, 24, 0),
+        new Vec3(400, 24, 0),
     ];
 
     constructor() {
         const level: Partial<LevelConfig> = {
-            name: 'v0.8.3_ui_wave',
+            name: 'v0.8.3.1_flat_lane_wave',
             totalEnemies: 40,
             spawnInterval: 1.0,
             enemyTypes: ['basic', 'shield', 'basic', 'cavalry', 'archer'],
@@ -68,24 +64,24 @@ export class SystemManager {
             this.baseLife = Math.max(0, this.baseLife - 1);
             this.viewSystem.updateGate(this.baseLife, this.maxBaseLife);
             this.viewSystem.showTip(`敌人 #${enemy.id} 攻到城门，城门 -1`);
-            console.log(`[SystemManager v0.8.3] base hit by enemy #${enemy.id}, life=${this.baseLife}`);
+            console.log(`[SystemManager v0.8.3.1] base hit by enemy #${enemy.id}, life=${this.baseLife}`);
         };
 
         this.viewSystem.onIdiomComplete = (idiom) => {
-            console.log(`[SystemManager v0.8.3] idiom ready: ${idiom}`);
+            console.log(`[SystemManager v0.8.3.1] idiom ready: ${idiom}`);
             this.viewSystem.showTip(`已组成：${idiom}，技能效果将在 v0.8.4 接回`);
         };
     }
 
     public initLevel(root: Node) {
-        console.log('[SystemManager v0.8.3] initLevel');
+        console.log('[SystemManager v0.8.3.1] initLevel');
 
         this.baseLife = this.maxBaseLife;
         this.viewSystem.init(root, this.path);
         this.viewSystem.updateGate(this.baseLife, this.maxBaseLife);
         this.enemySystem.clear();
         this.waveSystem.reset({
-            name: 'v0.8.3_ui_wave',
+            name: 'v0.8.3.1_flat_lane_wave',
             totalEnemies: 40,
             spawnInterval: 1.0,
             enemyTypes: ['basic', 'shield', 'basic', 'cavalry', 'archer'],
