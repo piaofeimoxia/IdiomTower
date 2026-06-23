@@ -4,12 +4,12 @@ import type { DamageResult } from './systems/EnemySystem';
 
 function installSystemManagerRewardPatch() {
     const proto = SystemManager.prototype as any;
-    if (proto.__rewardPatch0863) return;
-    proto.__rewardPatch0863 = true;
+    if (proto.__rewardPatch08632) return;
+    proto.__rewardPatch08632 = true;
 
     proto.buildRogueLevelConfig = function() {
         return {
-            name: 'v0.8.6.3_pick2_pierce_wave',
+            name: 'v0.8.6.3.2_same_lane_pierce_wave',
             totalEnemies: 180,
             spawnInterval: 1.45,
             enemyTypes: [
@@ -38,9 +38,9 @@ function installSystemManagerRewardPatch() {
 
         const killCount = results.filter(r => r.killed).length;
         this.viewSystem.showTip(results.length >= 2
-            ? `百步穿杨！贯穿 ${results.length} 个敌人，击杀 ${killCount} 个`
+            ? `百步穿杨！同排贯穿 ${results.length} 个敌人，击杀 ${killCount} 个`
             : results[0].killed ? '百步穿杨！点杀最前方敌人' : `百步穿杨！造成 ${damage} 点伤害`);
-        console.log(`[SystemManager v0.8.6.3] skill 百步穿杨 pierce=${results.length}, killed=${killCount}`);
+        console.log(`[SystemManager v0.8.6.3.2] skill 百步穿杨 same_lane_pierce=${results.length}, killed=${killCount}`);
         return true;
     };
 
