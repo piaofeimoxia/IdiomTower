@@ -1,4 +1,4 @@
-import { Node, UITransform, Color, Graphics, Vec3, Label, EventTouch } from 'cc';
+import { Node, UITransform, Color, Graphics, Vec3, Label, EventTouch, tween } from 'cc';
 import type { EnemyState, EnemyRemovedReason } from './EnemySystem';
 
 export type PathPoint = Vec3;
@@ -38,9 +38,9 @@ export class ViewSystem {
         this.createHud();
         this.createSlots();
         this.createCharTiles();
-        this.showTip('v0.8.3.1：已恢复旧版横向路径平面');
+        this.showTip('v0.8.4：技能效果已接回，可释放万箭齐发 / 固若金汤 / 画地为牢');
 
-        console.log('[ViewSystem v0.8.3.1] initialized');
+        console.log('[ViewSystem v0.8.4] initialized');
     }
 
     public updateHud(text: string) {
@@ -51,8 +51,11 @@ export class ViewSystem {
         if (this.tipLabel) this.tipLabel.string = text;
     }
 
-    public updateGate(life: number, maxLife: number) {
-        if (this.gateLabel) this.gateLabel.string = `城门血量：${life}/${maxLife}`;
+    public updateGate(life: number, maxLife: number, shield = 0) {
+        if (!this.gateLabel) return;
+        this.gateLabel.string = shield > 0
+            ? `城门血量：${life}/${maxLife}  护盾：${shield}`
+            : `城门血量：${life}/${maxLife}`;
     }
 
     public createEnemy(enemy: EnemyState) {
@@ -89,7 +92,7 @@ export class ViewSystem {
 
         this.enemyViews.set(enemy.id, { node, hpFill });
         this.updateEnemy(enemy);
-        console.log(`[ViewSystem v0.8.3.1] enemy created: #${enemy.id} ${enemy.type}`);
+        console.log(`[ViewSystem v0.8.4] enemy created: #${enemy.id} ${enemy.type}`);
     }
 
     public updateEnemy(enemy: EnemyState) {
@@ -104,7 +107,104 @@ export class ViewSystem {
         if (!view) return;
         this.enemyViews.delete(enemy.id);
         if (view.node.isValid) view.node.destroy();
-        console.log(`[ViewSystem v0.8.3.1] enemy removed: #${enemy.id}, reason=${reason}`);
+        console.log(`[ViewSystem v0.8.4] enemy removed: #${enemy.id}, reason=${reason}`);
+    }
+
+    public showArrowRainEffect() {
+        if (!this.viewRoot) return;
+
+        const effect = new Node('skill_arrow_rain');
+        this.viewRoot.addChild(effect);
+        effect.setPosition(new Vec3(0, 24, 0));
+        effect.addComponent(UITransform).setContentSize(1080, 120);
+
+        const bg = effect.addComponent(Graphics);
+        bg.fillColor = new Color(255, 230, 120, 42);
+        bg.roundRect(-540, -60, 1080, 120, 24);
+        bg.fill();
+        bg.strokeColor = new Color(255, 230, 120, 190);
+        bg.lineWidth = 3;
+        bg.roundRect(-540, -60, 1080, 120, 24);
+        bg.stroke();
+
+        for (let i = 0; i < 14; i++) {
+            const arrow = new Node(`arrow_${i}`);
+            effect.addChild(arrow);
+            arrow.setPosition(new Vec3(-490 + i * 75, 48 - (i % 3) * 34, 0));
+            arrow.addComponent(UITransform).setContentSize(48, 8);
+            const g = arrow.addComponent(Graphics);
+            g.fillColor = new Color(255, 240, 150, 235);
+            g.rect(-24, -4, 48, 8);
+            g.fill();
+            arrow.setRotationFromEuler(0, 0, -18);
+        }
+
+        this.createFloatingText('万箭齐发！', 0, 110, new Color(255, 240, 130, 255));
+        tween(effect)
+            .to(0.12, { scale: new Vec3(1.04, 1.12, 1) })
+            .to(0.12, { scale: new Vec3(1, 1, 1) })
+            .delay(0.35)
+            .to(0.18, { scale: new Vec3(0.96, 0.96, 1) })
+            .call(() => effect.destroy())
+            .start();
+    }
+
+    public showShieldEffect() {
+        const gateX = this.path.length > 0 ? this.path[this.path.length - 1].x : 400;
+        const effect = this.createRoundBox('skill_shield_effect', gateX, 78, 190, 170, new Color(70, 175, 255, 60), '', 0, 28);
+        const g = effect.addComponent(Graphics);
+        g.strokeColor = new Color(130, 220, 255, 210);
+        g.lineWidth = 5;
+        g.roundRect(-95, -85, 190, 170, 28);
+        g.stroke();
+
+        this.createFloatingText('固若金汤！', gateX, 180, new Color(140, 225, 255, 255));
+        tween(effect)
+            .to(0.15, { scale: new Vec3(1.10, 1.10, 1) })
+            .to(0.18, { scale: new Vec3(1, 1, 1) })
+            .delay(0.45)
+            .call(() => effect.destroy())
+            .start();
+    }
+
+    public showFreezeEffect(seconds: number) {
+        const effect = this.createRoundBox('skill_freeze_field', 0, 24, 1080, 122, new Color(90, 175, 255, 55), '', 0, 24);
+        const g = effect.addComponent(Graphics);
+        g.strokeColor = new Color(160, 225, 255, 175);
+        g.lineWidth = 4;
+        g.roundRect(-540, -61, 1080, 122, 24);
+        g.stroke();
+
+        this.createFloatingText(`画地为牢！冻结 ${seconds} 秒`, 0, 112, new Color(145, 225, 255, 255));
+        tween(effect)
+            .to(0.14, { scale: new Vec3(1.04, 1.08, 1) })
+            .to(0.16, { scale: new Vec3(1, 1, 1) })
+            .delay(0.65)
+            .to(0.18, { scale: new Vec3(0.96, 0.96, 1) })
+            .call(() => effect.destroy())
+            .start();
+    }
+
+    public showEnemyHitFeedback(enemy: EnemyState, damage: number, killed: boolean) {
+        const color = killed ? new Color(255, 220, 110, 255) : new Color(255, 245, 220, 255);
+        const text = killed ? '击破' : `-${damage}`;
+        this.createFloatingText(text, enemy.position.x, enemy.position.y + 56, color);
+
+        if (!this.viewRoot) return;
+        const burst = new Node('hit_burst');
+        this.viewRoot.addChild(burst);
+        burst.setPosition(new Vec3(enemy.position.x, enemy.position.y + 18, 0));
+        burst.addComponent(UITransform).setContentSize(killed ? 48 : 28, killed ? 48 : 28);
+        const g = burst.addComponent(Graphics);
+        g.fillColor = killed ? new Color(255, 190, 90, 190) : new Color(255, 255, 255, 135);
+        g.circle(0, 0, killed ? 24 : 14);
+        g.fill();
+
+        tween(burst)
+            .to(0.10, { scale: new Vec3(1.25, 1.25, 1) })
+            .to(0.12, { scale: new Vec3(0.1, 0.1, 1) })
+            .call(() => burst.destroy())
+            .start();
     }
 
     public clear() {
@@ -125,11 +225,11 @@ export class ViewSystem {
     }
 
     private recreateViewRoot(root: Node) {
-        for (const name of ['VIEW_ROOT_v0_8_3_1', 'VIEW_ROOT_v0_8_3', 'VIEW_ROOT_v0_8_2', 'VIEW_ROOT_v0_8_1']) {
+        for (const name of ['VIEW_ROOT_v0_8_4', 'VIEW_ROOT_v0_8_3_1', 'VIEW_ROOT_v0_8_3', 'VIEW_ROOT_v0_8_2', 'VIEW_ROOT_v0_8_1']) {
             const old = root.getChildByName(name);
             if (old && old.isValid) old.destroy();
         }
-        const viewRoot = new Node('VIEW_ROOT_v0_8_3_1');
+        const viewRoot = new Node('VIEW_ROOT_v0_8_4');
         viewRoot.addComponent(UITransform).setContentSize(1280, 720);
         root.addChild(viewRoot);
         this.viewRoot = viewRoot;
@@ -177,11 +277,11 @@ export class ViewSystem {
     }
 
     private createTitle() {
-        this.createText('title', '成语塔防 v0.8.3.1 - 旧版平面路径修复版', 0, 305, 31, new Color(255, 230, 120, 255));
+        this.createText('title', '成语塔防 v0.8.4 - 技能效果接回版', 0, 305, 31, new Color(255, 230, 120, 255));
     }
 
     private createHud() {
-        this.hudLabel = this.createText('hud', 'SystemManager v0.8.3.1 ready...', 0, 255, 20, new Color(190, 220, 255, 255)).getComponent(Label);
+        this.hudLabel = this.createText('hud', 'SystemManager v0.8.4 ready...', 0, 255, 20, new Color(190, 220, 255, 255)).getComponent(Label);
         this.tipLabel = this.createText('tip', '', 0, 225, 20, new Color(255, 230, 170, 255)).getComponent(Label);
     }
 
@@ -275,7 +375,7 @@ export class ViewSystem {
         const text = this.slots.map(s => s.char).join('');
         if (text.length < 4) return;
         if (text === '万箭齐发' || text === '固若金汤' || text === '画地为牢') {
-            this.showTip(`已组成：${text}（技能效果 v0.8.4 接回）`);
+            this.showTip(`已组成：${text}`);
             this.onIdiomComplete?.(text);
             this.clearSlotsToHome();
         } else {
@@ -294,6 +394,14 @@ export class ViewSystem {
     private resetTile(tile: TileView) {
         tile.slotIndex = -1;
         tile.node.setPosition(tile.homePos);
+    }
+
+    private createFloatingText(text: string, x: number, y: number, color: Color) {
+        const node = this.createText(`float_${text}`, text, x, y, 24, color);
+        tween(node)
+            .by(0.45, { position: new Vec3(0, 38, 0) })
+            .call(() => node.destroy())
+            .start();
     }
 
     private createRoundBox(name: string, x: number, y: number, w: number, h: number, color: Color, text: string, fontSize: number, radius: number) {
@@ -339,7 +447,9 @@ export class ViewSystem {
         const width = enemy.type === 'shield' ? 64 : 56;
         const ratio = Math.max(0, Math.min(1, enemy.hp / enemy.maxHp));
         g.clear();
-        g.fillColor = new Color(80, 230, 120, 255);
+        g.fillColor = enemy.frozenRemain > 0
+            ? new Color(120, 220, 255, 255)
+            : new Color(80, 230, 120, 255);
         g.rect(-width / 2, -4, width * ratio, 8);
         g.fill();
     }
