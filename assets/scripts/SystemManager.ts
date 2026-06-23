@@ -2,11 +2,15 @@ import { Node, Vec3 } from 'cc';
 import { WaveSystem, LevelConfig } from './systems/WaveSystem';
 import { EnemySystem } from './systems/EnemySystem';
 import { ViewSystem } from './systems/ViewSystem';
+import './systems/ViewSystemSkillPatch';
 
 /**
- * v0.8.5.3 稳定系统管理器。
+ * v0.8.5.4 稳定系统管理器。
  *
- * 保留 v0.8.5.2 行走动画接回，并修复普通兵走动时头部忽大忽小的问题。
+ * 保留 v0.8.5.3 行走动画修复，只优化万箭齐发的视觉表现：
+ * - 箭雨缩小并上移
+ * - 多个“击破”合并成一次统计提示
+ * - 单体命中反馈改为小爆点，避免满屏黄字
  */
 export class SystemManager {
 
@@ -26,7 +30,7 @@ export class SystemManager {
 
     constructor() {
         const level: Partial<LevelConfig> = {
-            name: 'v0.8.5.3_frame_sequence_wave',
+            name: 'v0.8.5.4_arrow_visual_wave',
             totalEnemies: 40,
             spawnInterval: 1.0,
             enemyTypes: ['basic', 'shield', 'basic', 'cavalry', 'archer'],
@@ -70,7 +74,7 @@ export class SystemManager {
     }
 
     public initLevel(root: Node) {
-        console.log('[SystemManager v0.8.5.3] initLevel');
+        console.log('[SystemManager v0.8.5.4] initLevel');
 
         this.baseLife = this.maxBaseLife;
         this.baseShield = 0;
@@ -78,7 +82,7 @@ export class SystemManager {
         this.viewSystem.updateGate(this.baseLife, this.maxBaseLife, this.baseShield);
         this.enemySystem.clear();
         this.waveSystem.reset({
-            name: 'v0.8.5.3_frame_sequence_wave',
+            name: 'v0.8.5.4_arrow_visual_wave',
             totalEnemies: 40,
             spawnInterval: 1.0,
             enemyTypes: ['basic', 'shield', 'basic', 'cavalry', 'archer'],
@@ -124,14 +128,20 @@ export class SystemManager {
 
     private releaseWanJianQiFa() {
         const results = this.enemySystem.damageAll(9999);
-        this.viewSystem.showArrowRainEffect();
+        const hitCount = results.length;
 
-        for (const result of results) {
+        // v0.8.5.4：由补丁版 showArrowRainEffect 统一显示技能名和击破统计。
+        (this.viewSystem as any).showArrowRainEffect(hitCount);
+
+        // 单体反馈只保留小爆点，并限制数量，避免满屏“击破”。
+        const maxBurstCount = Math.min(8, results.length);
+        for (let i = 0; i < maxBurstCount; i++) {
+            const result = results[i];
             this.viewSystem.showEnemyHitFeedback(result.enemy, result.damage, result.killed);
         }
 
-        this.viewSystem.showTip(`万箭齐发！命中 ${results.length} 个敌人`);
-        console.log(`[SystemManager v0.8.5.3] skill 万箭齐发 hit=${results.length}`);
+        this.viewSystem.showTip(`万箭齐发！命中 ${hitCount} 个敌人`);
+        console.log(`[SystemManager v0.8.5.4] skill 万箭齐发 hit=${hitCount}`);
     }
 
     private releaseGuRuoJinTang() {
@@ -140,7 +150,7 @@ export class SystemManager {
         this.viewSystem.updateGate(this.baseLife, this.maxBaseLife, this.baseShield);
         this.viewSystem.showShieldEffect();
         this.viewSystem.showTip(`固若金汤！城门获得 ${shieldAmount} 点护盾`);
-        console.log(`[SystemManager v0.8.5.3] skill 固若金汤 shield=${this.baseShield}`);
+        console.log(`[SystemManager v0.8.5.4] skill 固若金汤 shield=${this.baseShield}`);
     }
 
     private releaseHuaDiWeiLao() {
@@ -148,7 +158,7 @@ export class SystemManager {
         const count = this.enemySystem.freezeAll(freezeSeconds);
         this.viewSystem.showFreezeEffect(freezeSeconds);
         this.viewSystem.showTip(`画地为牢！冻结 ${count} 个敌人 ${freezeSeconds} 秒`);
-        console.log(`[SystemManager v0.8.5.3] skill 画地为牢 freeze=${count}`);
+        console.log(`[SystemManager v0.8.5.4] skill 画地为牢 freeze=${count}`);
     }
 
     private applyBaseDamage(damage: number, reason: string) {
@@ -167,6 +177,6 @@ export class SystemManager {
         }
 
         this.viewSystem.updateGate(this.baseLife, this.maxBaseLife, this.baseShield);
-        console.log(`[SystemManager v0.8.5.3] base damage=${damage}, life=${this.baseLife}, shield=${this.baseShield}`);
+        console.log(`[SystemManager v0.8.5.4] base damage=${damage}, life=${this.baseLife}, shield=${this.baseShield}`);
     }
 }
