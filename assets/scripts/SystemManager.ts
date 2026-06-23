@@ -4,10 +4,10 @@ import { EnemySystem } from './systems/EnemySystem';
 import { ViewSystem } from './systems/ViewSystem';
 
 /**
- * v0.8.2 稳定系统管理器。
+ * v0.8.3 稳定系统管理器。
  *
- * 本版接回正式敌人路径：
- * GameBootstrap -> SystemManager -> WaveSystem -> EnemySystem -> ViewSystem
+ * 本版保留 v0.8.2 敌人路径，并接回旧版地面、城门、成语槽、字块。
+ * 技能实际效果暂不接回，下一版 v0.8.4 再接。
  */
 export class SystemManager {
 
@@ -17,6 +17,7 @@ export class SystemManager {
 
     private initialized = false;
     private baseLife = 10;
+    private readonly maxBaseLife = 10;
 
     private readonly path = [
         new Vec3(-560, 120, 0),
@@ -29,7 +30,7 @@ export class SystemManager {
 
     constructor() {
         const level: Partial<LevelConfig> = {
-            name: 'v0.8.2_path_wave',
+            name: 'v0.8.3_ui_wave',
             totalEnemies: 40,
             spawnInterval: 1.0,
             enemyTypes: ['basic', 'shield', 'basic', 'cavalry', 'archer'],
@@ -40,7 +41,7 @@ export class SystemManager {
         this.viewSystem = new ViewSystem();
 
         this.waveSystem.onWaveStart = (cfg) => {
-            this.viewSystem.updateHud(`Wave start: ${cfg.name}`);
+            this.viewSystem.showTip(`关卡开始：${cfg.name}`);
         };
 
         this.waveSystem.onSpawn = (type) => {
@@ -48,7 +49,7 @@ export class SystemManager {
         };
 
         this.waveSystem.onWaveComplete = (cfg) => {
-            this.viewSystem.updateHud(`Wave complete: ${cfg.name}`);
+            this.viewSystem.showTip(`刷怪完成：${cfg.name}`);
         };
 
         this.enemySystem.onEnemySpawned = (enemy) => {
@@ -65,18 +66,26 @@ export class SystemManager {
 
         this.enemySystem.onBaseHit = (enemy) => {
             this.baseLife = Math.max(0, this.baseLife - 1);
-            console.log(`[SystemManager v0.8.2] base hit by enemy #${enemy.id}, life=${this.baseLife}`);
+            this.viewSystem.updateGate(this.baseLife, this.maxBaseLife);
+            this.viewSystem.showTip(`敌人 #${enemy.id} 攻到城门，城门 -1`);
+            console.log(`[SystemManager v0.8.3] base hit by enemy #${enemy.id}, life=${this.baseLife}`);
+        };
+
+        this.viewSystem.onIdiomComplete = (idiom) => {
+            console.log(`[SystemManager v0.8.3] idiom ready: ${idiom}`);
+            this.viewSystem.showTip(`已组成：${idiom}，技能效果将在 v0.8.4 接回`);
         };
     }
 
     public initLevel(root: Node) {
-        console.log('[SystemManager v0.8.2] initLevel');
+        console.log('[SystemManager v0.8.3] initLevel');
 
-        this.baseLife = 10;
+        this.baseLife = this.maxBaseLife;
         this.viewSystem.init(root, this.path);
+        this.viewSystem.updateGate(this.baseLife, this.maxBaseLife);
         this.enemySystem.clear();
         this.waveSystem.reset({
-            name: 'v0.8.2_path_wave',
+            name: 'v0.8.3_ui_wave',
             totalEnemies: 40,
             spawnInterval: 1.0,
             enemyTypes: ['basic', 'shield', 'basic', 'cavalry', 'archer'],
@@ -93,7 +102,7 @@ export class SystemManager {
         this.enemySystem.tick(dt);
 
         this.viewSystem.updateHud(
-            `${this.waveSystem.getStatusText()} | alive=${this.enemySystem.getAliveCount()} | base=${this.baseLife}`
+            `${this.waveSystem.getStatusText()} | alive=${this.enemySystem.getAliveCount()} | gate=${this.baseLife}/${this.maxBaseLife}`
         );
     }
 
