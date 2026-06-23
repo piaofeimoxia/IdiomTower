@@ -22,11 +22,11 @@ export type DamageResult = {
 };
 
 /**
- * v0.8.5 敌人平面路径系统。
+ * v0.8.5.2 敌人平面路径系统。
  *
- * 保留 v0.8.4：
- * - 全体伤害：万箭齐发
- * - 全体冻结：画地为牢
+ * 修复点：
+ * - 恢复旧版移动节奏，速度不再像 v0.8.5 那样过快。
+ * - 继续保留万箭齐发伤害和画地为牢冻结。
  */
 export class EnemySystem {
 
@@ -65,7 +65,7 @@ export class EnemySystem {
         };
 
         this.enemies.push(enemy);
-        console.log(`[EnemySystem v0.8.5] spawned #${enemy.id} ${enemy.type}`);
+        console.log(`[EnemySystem v0.8.5.2] spawned #${enemy.id} ${enemy.type}`);
         this.onEnemySpawned?.(this.cloneEnemy(enemy));
     }
 
@@ -154,7 +154,7 @@ export class EnemySystem {
         this.enemies = this.enemies.filter(e => e.id !== enemy.id);
 
         if (reason === 'base_hit') {
-            console.log(`[EnemySystem v0.8.5] enemy #${enemy.id} reached base`);
+            console.log(`[EnemySystem v0.8.5.2] enemy #${enemy.id} reached base`);
             this.onBaseHit?.(this.cloneEnemy(enemy));
         }
 
@@ -162,10 +162,10 @@ export class EnemySystem {
     }
 
     private getStats(type: EnemyType) {
-        if (type === 'shield') return { hp: 180, speed: 58 };
-        if (type === 'cavalry') return { hp: 100, speed: 115 };
-        if (type === 'archer') return { hp: 90, speed: 76 };
-        return { hp: 100, speed: 82 };
+        if (type === 'shield') return { hp: 180, speed: 40 };
+        if (type === 'cavalry') return { hp: 100, speed: 70 };
+        if (type === 'archer') return { hp: 90, speed: 46 };
+        return { hp: 100, speed: 52 };
     }
 
     private cloneEnemy(enemy: EnemyState): EnemyState {
