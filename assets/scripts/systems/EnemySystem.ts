@@ -30,9 +30,9 @@ export type DamageResult = {
 };
 
 /**
- * v0.8.6 敌人平面路径系统。
+ * v0.8.6.1 敌人平面路径系统。
  *
- * 保留 v0.8.5.5 弓兵远程攻击机制，并新增默认成语“百步穿杨”的单体伤害接口。
+ * 保留弓兵远程攻击与百步穿杨单体伤害，并降低开局压力。
  */
 export class EnemySystem {
 
@@ -63,7 +63,7 @@ export class EnemySystem {
     public spawnEnemy(type: EnemyType) {
         const id = this.nextId++;
         const first = this.path[0] ?? new Vec3(-560, 24, 0);
-        const stats = this.getStats(type);
+        const stats = this.getStats(type, id);
         const lanes = type === 'archer' ? this.archerLanes : this.commonLanes;
         const laneY = lanes[(id - 1) % lanes.length];
 
@@ -91,7 +91,7 @@ export class EnemySystem {
         };
 
         this.enemies.push(enemy);
-        console.log(`[EnemySystem v0.8.6] spawned #${enemy.id} ${enemy.type}`);
+        console.log(`[EnemySystem v0.8.6.1] spawned #${enemy.id} ${enemy.type}`);
         this.onEnemySpawned?.(this.cloneEnemy(enemy));
     }
 
@@ -121,29 +121,20 @@ export class EnemySystem {
             this.onEnemyUpdated?.(this.cloneEnemy(enemy));
         }
 
-        for (const item of removed) {
-            this.removeEnemy(item.enemy, item.reason);
-        }
+        for (const item of removed) this.removeEnemy(item.enemy, item.reason);
     }
 
     public damageClosestToBase(amount: number): DamageResult | null {
         if (this.enemies.length <= 0) return null;
-
-        const target = [...this.enemies]
-            .filter(enemy => !enemy.reachedEnd)
-            .sort((a, b) => b.position.x - a.position.x)[0];
-
+        const target = [...this.enemies].filter(enemy => !enemy.reachedEnd).sort((a, b) => b.position.x - a.position.x)[0];
         if (!target) return null;
 
         target.hp = Math.max(0, target.hp - amount);
         const killed = target.hp <= 0;
         const snapshot = this.cloneEnemy(target);
 
-        if (killed) {
-            this.removeEnemy(target, 'dead');
-        } else {
-            this.onEnemyUpdated?.(snapshot);
-        }
+        if (killed) this.removeEnemy(target, 'dead');
+        else this.onEnemyUpdated?.(snapshot);
 
         return { enemy: snapshot, damage: amount, killed };
     }
@@ -157,18 +148,11 @@ export class EnemySystem {
             const killed = enemy.hp <= 0;
             const snapshot = this.cloneEnemy(enemy);
             results.push({ enemy: snapshot, damage: amount, killed });
-
-            if (killed) {
-                removed.push(enemy);
-            } else {
-                this.onEnemyUpdated?.(snapshot);
-            }
+            if (killed) removed.push(enemy);
+            else this.onEnemyUpdated?.(snapshot);
         }
 
-        for (const enemy of removed) {
-            this.removeEnemy(enemy, 'dead');
-        }
-
+        for (const enemy of removed) this.removeEnemy(enemy, 'dead');
         return results;
     }
 
@@ -189,9 +173,7 @@ export class EnemySystem {
     public clear() {
         const old = [...this.enemies];
         this.enemies.length = 0;
-        for (const enemy of old) {
-            this.onEnemyRemoved?.(this.cloneEnemy(enemy), 'dead');
-        }
+        for (const enemy of old) this.onEnemyRemoved?.(this.cloneEnemy(enemy), 'dead');
     }
 
     private moveFlatLane(enemy: EnemyState, dt: number) {
@@ -231,32 +213,27 @@ export class EnemySystem {
             enemy.archerStateTimer = 0;
             return;
         }
-
         if (enemy.archerState === 'draw' && enemy.archerStateTimer >= this.archerDrawDuration) {
             enemy.archerState = 'full';
             enemy.archerStateTimer = 0;
             return;
         }
-
         if (enemy.archerState === 'full' && enemy.archerStateTimer >= this.archerFullDuration) {
             enemy.archerState = 'release';
             enemy.archerStateTimer = 0;
             this.onRangedAttackGate?.(this.cloneEnemy(enemy));
             return;
         }
-
         if (enemy.archerState === 'release' && enemy.archerStateTimer >= this.archerReleaseDuration) {
             enemy.archerState = 'recover';
             enemy.archerStateTimer = 0;
             return;
         }
-
         if (enemy.archerState === 'recover' && enemy.archerStateTimer >= this.archerRecoverDuration) {
             enemy.archerState = 'cooldown';
             enemy.archerStateTimer = 0;
             return;
         }
-
         if (enemy.archerState === 'cooldown' && enemy.archerStateTimer >= enemy.rangedAttackInterval) {
             enemy.archerState = 'raise';
             enemy.archerStateTimer = 0;
@@ -267,24 +244,24 @@ export class EnemySystem {
         this.enemies = this.enemies.filter(e => e.id !== enemy.id);
 
         if (reason === 'base_hit') {
-            console.log(`[EnemySystem v0.8.6] enemy #${enemy.id} reached base`);
+            console.log(`[EnemySystem v0.8.6.1] enemy #${enemy.id} reached base`);
             this.onBaseHit?.(this.cloneEnemy(enemy));
         }
 
         this.onEnemyRemoved?.(this.cloneEnemy(enemy), reason);
     }
 
-    private getStats(type: EnemyType) {
-        if (type === 'shield') return { hp: 180, speed: 40 };
-        if (type === 'cavalry') return { hp: 100, speed: 70 };
-        if (type === 'archer') return { hp: 90, speed: 46 };
-        return { hp: 100, speed: 52 };
+    private getStats(type: EnemyType, id: number) {
+        // 前 10 个敌人低压，避免第一次奖励时已经兵临城下。
+        if (id <= 10) return { hp: 80, speed: 30 };
+
+        if (type === 'shield') return { hp: 150, speed: 34 };
+        if (type === 'cavalry') return { hp: 90, speed: 58 };
+        if (type === 'archer') return { hp: 80, speed: 38 };
+        return { hp: 90, speed: 38 };
     }
 
     private cloneEnemy(enemy: EnemyState): EnemyState {
-        return {
-            ...enemy,
-            position: enemy.position.clone(),
-        };
+        return { ...enemy, position: enemy.position.clone() };
     }
 }
