@@ -4,11 +4,12 @@ import './systems/EnemySystemPiercePatch';
 import './systems/ViewSystemRewardPick2Patch';
 import './systems/ViewSystemForcePick2Patch';
 import './SystemManagerRewardPatch';
+import './SystemManagerBagCyclePatch';
 
 const { ccclass } = _decorator;
 
 /**
- * GameBootstrap v0.8.6.3.1
+ * GameBootstrap v0.8.6.3.3
  *
  * 入口保持稳定，只负责启动 SystemManager。
  */
@@ -18,20 +19,20 @@ export class GameBootstrap extends Component {
     private systemManager: SystemManager | null = null;
 
     onLoad() {
-        console.log('[GameBootstrap v0.8.6.3.1] onLoad');
+        console.log('[GameBootstrap v0.8.6.3.3] onLoad');
 
         try {
             this.systemManager = new SystemManager();
             this.systemManager.initLevel(this.node);
-            console.log('[GameBootstrap v0.8.6.3.1] initialized');
+            console.log('[GameBootstrap v0.8.6.3.3] initialized');
         } catch (err) {
-            console.error('[GameBootstrap v0.8.6.3.1] init failed', err);
+            console.error('[GameBootstrap v0.8.6.3.3] init failed', err);
             this.systemManager = null;
         }
     }
 
     start() {
-        console.log('[GameBootstrap v0.8.6.3.1] start');
+        console.log('[GameBootstrap v0.8.6.3.3] start');
     }
 
     update(dt: number) {
