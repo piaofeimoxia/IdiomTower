@@ -4,10 +4,9 @@ import { SystemManager } from './SystemManager';
 const { ccclass } = _decorator;
 
 /**
- * GameBootstrap v0.8.1
+ * GameBootstrap v0.8.2
  *
- * 基于已经验证成功的最小可运行壳，重新接回：
- * GameBootstrap -> SystemManager -> WaveSystem -> ViewSystem
+ * 入口保持稳定，只负责启动 SystemManager。
  */
 @ccclass('GameBootstrap')
 export class GameBootstrap extends Component {
@@ -15,20 +14,20 @@ export class GameBootstrap extends Component {
     private systemManager: SystemManager | null = null;
 
     onLoad() {
-        console.log('🔥 GameBootstrap v0.8.1 onLoad HIT');
+        console.log('[GameBootstrap v0.8.2] onLoad');
 
         try {
             this.systemManager = new SystemManager();
             this.systemManager.initLevel(this.node);
-            console.log('✅ GameBootstrap v0.8.1 initialized');
+            console.log('[GameBootstrap v0.8.2] initialized');
         } catch (err) {
-            console.error('[GameBootstrap v0.8.1] init failed', err);
+            console.error('[GameBootstrap v0.8.2] init failed', err);
             this.systemManager = null;
         }
     }
 
     start() {
-        console.log('✅ GameBootstrap v0.8.1 start HIT');
+        console.log('[GameBootstrap v0.8.2] start');
     }
 
     update(dt: number) {
