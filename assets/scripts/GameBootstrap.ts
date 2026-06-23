@@ -1,41 +1,95 @@
-import { _decorator, Component } from 'cc';
-import { SystemManager } from './SystemManager';
-import { EventBus } from './EventBus';
+import { _decorator, Component, Node, UITransform, Graphics, Color, Vec3, Label } from 'cc';
 
 const { ccclass } = _decorator;
 
 /**
- * GameBootstrap
- * 作为 Cocos 场景唯一入口（挂在 Canvas 上）
- * 负责：
- * - 初始化 EventBus
- * - 初始化 SystemManager
- * - 驱动主循环 tick
+ * 最小可运行修复版入口。
+ * 目的：先验证 Cocos 生命周期和渲染链路一定能跑起来。
+ *
+ * Canvas 上只挂这个 GameBootstrap。
+ * 如果这个版本仍然没有 onLoad / update 打印，说明问题不在代码，而在场景组件绑定或 Creator 缓存。
  */
 @ccclass('GameBootstrap')
 export class GameBootstrap extends Component {
 
-    private systemManager: SystemManager | null = null;
+    private elapsed = 0;
+    private enemyIndex = 0;
+    private titleLabel: Label | null = null;
 
     onLoad() {
-        // 清理事件，避免热重载残留
-        EventBus.instance.clear();
+        console.log('🔥 MINIMAL GameBootstrap onLoad HIT');
 
-        // 初始化系统管理器
-        this.systemManager = new SystemManager();
+        this.ensureCanvasSize();
+        this.createBackground();
+        this.createTitle();
+        this.spawnEnemyBlock('basic');
+    }
 
-        // 初始化关卡/系统
-        this.systemManager.initLevel?.();
-
-        console.log('[GameBootstrap] initialized');
+    start() {
+        console.log('✅ MINIMAL GameBootstrap start HIT');
     }
 
     update(dt: number) {
-        if (!this.systemManager) return;
-        this.systemManager.tick(dt);
+        this.elapsed += dt;
+
+        // 每 1 秒刷一个测试敌人，保证画面不是黑屏。
+        if (this.elapsed >= 1.0) {
+            this.elapsed = 0;
+            this.spawnEnemyBlock(this.enemyIndex % 2 === 0 ? 'basic' : 'shield');
+        }
     }
 
-    onDestroy() {
-        EventBus.instance.clear();
+    private ensureCanvasSize() {
+        const ui = this.node.getComponent(UITransform) || this.node.addComponent(UITransform);
+        if (ui.width <= 0 || ui.height <= 0) {
+            ui.setContentSize(1280, 720);
+        }
+    }
+
+    private createBackground() {
+        const bg = new Node('debug_background');
+        const ui = bg.addComponent(UITransform);
+        ui.setContentSize(1280, 720);
+
+        const g = bg.addComponent(Graphics);
+        g.fillColor = new Color(18, 22, 32, 255);
+        g.rect(-640, -360, 1280, 720);
+        g.fill();
+
+        this.node.addChild(bg);
+        bg.setSiblingIndex(0);
+    }
+
+    private createTitle() {
+        const title = new Node('debug_title');
+        this.node.addChild(title);
+        title.setPosition(new Vec3(0, 260, 0));
+
+        const label = title.addComponent(Label);
+        label.string = '成语塔防 - 最小可运行修复版';
+        label.fontSize = 32;
+        label.color = new Color(255, 230, 120, 255);
+        this.titleLabel = label;
+    }
+
+    private spawnEnemyBlock(type: 'basic' | 'shield') {
+        const enemy = new Node(`debug_enemy_${this.enemyIndex++}`);
+        this.node.addChild(enemy);
+
+        const ui = enemy.addComponent(UITransform);
+        ui.setContentSize(60, 60);
+
+        const g = enemy.addComponent(Graphics);
+        g.fillColor = type === 'basic'
+            ? new Color(230, 70, 70, 255)
+            : new Color(70, 170, 255, 255);
+        g.rect(-30, -30, 60, 60);
+        g.fill();
+
+        const x = -480 + (this.enemyIndex % 8) * 130;
+        const y = 40 - Math.floor(this.enemyIndex / 8) * 90;
+        enemy.setPosition(new Vec3(x, y, 0));
+
+        console.log(`[MinimalSpawn] ${type} enemy created at ${x},${y}`);
     }
 }
