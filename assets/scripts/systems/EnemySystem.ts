@@ -14,7 +14,6 @@ export type EnemyState = {
     reachedEnd: boolean;
     frozenRemain: number;
 
-    // v0.8.5.5：弓兵远程攻击状态。
     rangedStopped: boolean;
     rangedAttackX: number;
     rangedAttackInterval: number;
@@ -31,12 +30,9 @@ export type DamageResult = {
 };
 
 /**
- * v0.8.5.5 敌人平面路径系统。
+ * v0.8.6 敌人平面路径系统。
  *
- * 修复点：
- * - 恢复旧版弓兵机制：移动到射程点后停步。
- * - 弓兵按 raise -> draw -> full -> release -> recover -> cooldown 循环拉弓射击。
- * - 弓兵远程伤害城门，不再直接走到城门撞门。
+ * 保留 v0.8.5.5 弓兵远程攻击机制，并新增默认成语“百步穿杨”的单体伤害接口。
  */
 export class EnemySystem {
 
@@ -95,7 +91,7 @@ export class EnemySystem {
         };
 
         this.enemies.push(enemy);
-        console.log(`[EnemySystem v0.8.5.5] spawned #${enemy.id} ${enemy.type}`);
+        console.log(`[EnemySystem v0.8.6] spawned #${enemy.id} ${enemy.type}`);
         this.onEnemySpawned?.(this.cloneEnemy(enemy));
     }
 
@@ -128,6 +124,28 @@ export class EnemySystem {
         for (const item of removed) {
             this.removeEnemy(item.enemy, item.reason);
         }
+    }
+
+    public damageClosestToBase(amount: number): DamageResult | null {
+        if (this.enemies.length <= 0) return null;
+
+        const target = [...this.enemies]
+            .filter(enemy => !enemy.reachedEnd)
+            .sort((a, b) => b.position.x - a.position.x)[0];
+
+        if (!target) return null;
+
+        target.hp = Math.max(0, target.hp - amount);
+        const killed = target.hp <= 0;
+        const snapshot = this.cloneEnemy(target);
+
+        if (killed) {
+            this.removeEnemy(target, 'dead');
+        } else {
+            this.onEnemyUpdated?.(snapshot);
+        }
+
+        return { enemy: snapshot, damage: amount, killed };
     }
 
     public damageAll(amount: number): DamageResult[] {
@@ -249,7 +267,7 @@ export class EnemySystem {
         this.enemies = this.enemies.filter(e => e.id !== enemy.id);
 
         if (reason === 'base_hit') {
-            console.log(`[EnemySystem v0.8.5.5] enemy #${enemy.id} reached base`);
+            console.log(`[EnemySystem v0.8.6] enemy #${enemy.id} reached base`);
             this.onBaseHit?.(this.cloneEnemy(enemy));
         }
 
