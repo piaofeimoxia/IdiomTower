@@ -1,47 +1,44 @@
 import { Node, UITransform, Color, Graphics, Vec3, Label } from 'cc';
-import { EnemyType, SpawnPayload } from './WaveSystem';
+import type { EnemyState, EnemyRemovedReason } from './EnemySystem';
+
+export type PathPoint = Vec3;
 
 type EnemyView = {
     node: Node;
-    speed: number;
+    hpFill: Graphics;
 };
 
 /**
- * v0.8.1 稳定可视化系统。
+ * v0.8.2 正式路径可视化系统。
  *
- * 目标：保证 SystemManager 接回后依然有稳定画面。
- * 这一版只使用 Graphics + Label，不依赖外部图片资源。
+ * 负责：
+ * - 画背景
+ * - 画敌人路径
+ * - 创建 / 更新 / 移除敌人节点
+ * - 显示 HUD 状态
  */
 export class ViewSystem {
 
     private root: Node | null = null;
     private viewRoot: Node | null = null;
     private hudLabel: Label | null = null;
-    private enemies: EnemyView[] = [];
+    private enemyViews = new Map<number, EnemyView>();
+    private path: PathPoint[] = [];
 
-    public init(root: Node) {
+    public init(root: Node, path: PathPoint[]) {
         this.root = root;
-        this.enemies.length = 0;
+        this.path = path.map(p => p.clone());
+        this.enemyViews.clear();
 
         this.ensureCanvasSize(root);
         this.recreateViewRoot(root);
         this.createBackground();
+        this.createPath();
         this.createTitle();
         this.createHud();
+        this.createBaseMarkers();
 
-        console.log('[ViewSystem v0.8.1] initialized');
-    }
-
-    public tick(dt: number) {
-        for (const enemy of this.enemies) {
-            const p = enemy.node.position;
-            enemy.node.setPosition(new Vec3(p.x + enemy.speed * dt, p.y, p.z));
-
-            // 超出右侧后从左侧重新进入，避免跑完后画面空。
-            if (enemy.node.position.x > 560) {
-                enemy.node.setPosition(new Vec3(-560, enemy.node.position.y, enemy.node.position.z));
-            }
-        }
+        console.log('[ViewSystem v0.8.2] initialized');
     }
 
     public updateHud(text: string) {
@@ -49,53 +46,89 @@ export class ViewSystem {
         this.hudLabel.string = text;
     }
 
-    public spawnEnemy(type: EnemyType, payload?: SpawnPayload) {
+    public createEnemy(enemy: EnemyState) {
         if (!this.viewRoot) {
-            console.warn('[ViewSystem v0.8.1] spawnEnemy ignored: viewRoot is null');
+            console.warn('[ViewSystem v0.8.2] createEnemy ignored: viewRoot is null');
             return;
         }
 
-        const node = new Node(`enemy_${type}_${payload?.index ?? this.enemies.length + 1}`);
+        const node = new Node(`enemy_${enemy.type}_${enemy.id}`);
         this.viewRoot.addChild(node);
+        node.setPosition(enemy.position);
 
-        const size = type === 'shield' ? 64 : 56;
+        const size = enemy.type === 'shield' ? 64 : 56;
         const ui = node.addComponent(UITransform);
-        ui.setContentSize(size, size);
+        ui.setContentSize(size, size + 16);
 
-        const g = node.addComponent(Graphics);
-        g.clear();
-        g.fillColor = this.getEnemyColor(type);
-        g.rect(-size / 2, -size / 2, size, size);
-        g.fill();
+        const body = node.addComponent(Graphics);
+        body.fillColor = this.getEnemyColor(enemy.type);
+        body.rect(-size / 2, -size / 2, size, size);
+        body.fill();
 
         const labelNode = new Node('enemy_label');
         node.addChild(labelNode);
-        labelNode.setPosition(new Vec3(0, -4, 0));
-        const labelTransform = labelNode.addComponent(UITransform);
-        labelTransform.setContentSize(size, 28);
+        labelNode.setPosition(new Vec3(0, -5, 0));
+        const labelUi = labelNode.addComponent(UITransform);
+        labelUi.setContentSize(size, 26);
         const label = labelNode.addComponent(Label);
-        label.string = payload ? `${payload.index}` : type;
+        label.string = `${enemy.id}`;
         label.fontSize = 20;
         label.color = new Color(255, 255, 255, 255);
 
-        const index = payload?.index ?? this.enemies.length + 1;
-        const x = -520;
-        const y = 80 - ((index - 1) % 5) * 72;
-        node.setPosition(new Vec3(x, y, 0));
+        const hpBgNode = new Node('hp_bg');
+        node.addChild(hpBgNode);
+        hpBgNode.setPosition(new Vec3(0, size / 2 + 8, 0));
+        const hpBgUi = hpBgNode.addComponent(UITransform);
+        hpBgUi.setContentSize(size, 8);
+        const hpBg = hpBgNode.addComponent(Graphics);
+        hpBg.fillColor = new Color(35, 35, 35, 255);
+        hpBg.rect(-size / 2, -4, size, 8);
+        hpBg.fill();
 
-        const speed = type === 'shield' ? 48 : 72;
-        this.enemies.push({ node, speed });
+        const hpFillNode = new Node('hp_fill');
+        node.addChild(hpFillNode);
+        hpFillNode.setPosition(new Vec3(0, size / 2 + 8, 0));
+        const hpFillUi = hpFillNode.addComponent(UITransform);
+        hpFillUi.setContentSize(size, 8);
+        const hpFill = hpFillNode.addComponent(Graphics);
 
-        console.log(`[ViewSystem v0.8.1] enemy rendered: ${type} #${index}`);
+        this.enemyViews.set(enemy.id, { node, hpFill });
+        this.updateEnemy(enemy);
+
+        console.log(`[ViewSystem v0.8.2] enemy created: #${enemy.id} ${enemy.type}`);
+    }
+
+    public updateEnemy(enemy: EnemyState) {
+        const view = this.enemyViews.get(enemy.id);
+        if (!view || !view.node.isValid) return;
+
+        view.node.setPosition(enemy.position);
+        this.drawHp(view.hpFill, enemy);
+    }
+
+    public removeEnemy(enemy: EnemyState, reason: EnemyRemovedReason) {
+        const view = this.enemyViews.get(enemy.id);
+        if (!view) return;
+
+        this.enemyViews.delete(enemy.id);
+        if (view.node.isValid) {
+            view.node.destroy();
+        }
+
+        console.log(`[ViewSystem v0.8.2] enemy removed: #${enemy.id}, reason=${reason}`);
     }
 
     public clear() {
+        for (const view of this.enemyViews.values()) {
+            if (view.node.isValid) view.node.destroy();
+        }
+        this.enemyViews.clear();
+
         if (this.viewRoot && this.viewRoot.isValid) {
             this.viewRoot.destroy();
         }
         this.viewRoot = null;
         this.hudLabel = null;
-        this.enemies.length = 0;
     }
 
     private ensureCanvasSize(root: Node) {
@@ -106,12 +139,18 @@ export class ViewSystem {
     }
 
     private recreateViewRoot(root: Node) {
-        const old = root.getChildByName('VIEW_ROOT_v0_8_1');
+        const old = root.getChildByName('VIEW_ROOT_v0_8_2');
         if (old && old.isValid) {
             old.destroy();
         }
 
-        const viewRoot = new Node('VIEW_ROOT_v0_8_1');
+        // 清理上一版调试节点，避免从 v0.8.1 热更新时叠层。
+        const old081 = root.getChildByName('VIEW_ROOT_v0_8_1');
+        if (old081 && old081.isValid) {
+            old081.destroy();
+        }
+
+        const viewRoot = new Node('VIEW_ROOT_v0_8_2');
         const ui = viewRoot.addComponent(UITransform);
         ui.setContentSize(1280, 720);
         root.addChild(viewRoot);
@@ -134,18 +173,43 @@ export class ViewSystem {
         bg.setSiblingIndex(0);
     }
 
+    private createPath() {
+        if (!this.viewRoot || this.path.length < 2) return;
+
+        const pathNode = new Node('enemy_path');
+        this.viewRoot.addChild(pathNode);
+
+        const g = pathNode.addComponent(Graphics);
+        g.lineWidth = 12;
+        g.strokeColor = new Color(80, 95, 125, 255);
+        g.moveTo(this.path[0].x, this.path[0].y);
+        for (let i = 1; i < this.path.length; i++) {
+            g.lineTo(this.path[i].x, this.path[i].y);
+        }
+        g.stroke();
+
+        const g2 = pathNode.addComponent(Graphics);
+        g2.lineWidth = 4;
+        g2.strokeColor = new Color(160, 190, 255, 255);
+        g2.moveTo(this.path[0].x, this.path[0].y);
+        for (let i = 1; i < this.path.length; i++) {
+            g2.lineTo(this.path[i].x, this.path[i].y);
+        }
+        g2.stroke();
+    }
+
     private createTitle() {
         if (!this.viewRoot) return;
 
         const title = new Node('title');
         this.viewRoot.addChild(title);
-        title.setPosition(new Vec3(0, 260, 0));
+        title.setPosition(new Vec3(0, 280, 0));
 
         const ui = title.addComponent(UITransform);
-        ui.setContentSize(800, 60);
+        ui.setContentSize(900, 60);
 
         const label = title.addComponent(Label);
-        label.string = '成语塔防 v0.8.1 - SystemManager 接回版';
+        label.string = '成语塔防 v0.8.2 - 敌人正式路径版';
         label.fontSize = 32;
         label.color = new Color(255, 230, 120, 255);
     }
@@ -155,19 +219,60 @@ export class ViewSystem {
 
         const hud = new Node('hud');
         this.viewRoot.addChild(hud);
-        hud.setPosition(new Vec3(0, -300, 0));
+        hud.setPosition(new Vec3(0, -310, 0));
 
         const ui = hud.addComponent(UITransform);
-        ui.setContentSize(900, 40);
+        ui.setContentSize(1100, 40);
 
         const label = hud.addComponent(Label);
-        label.string = 'SystemManager ready...';
+        label.string = 'SystemManager v0.8.2 ready...';
         label.fontSize = 22;
         label.color = new Color(190, 220, 255, 255);
         this.hudLabel = label;
     }
 
-    private getEnemyColor(type: EnemyType) {
+    private createBaseMarkers() {
+        if (!this.viewRoot || this.path.length < 2) return;
+
+        this.createMarker('入口', this.path[0], new Color(80, 220, 120, 255));
+        this.createMarker('基地', this.path[this.path.length - 1], new Color(255, 100, 100, 255));
+    }
+
+    private createMarker(text: string, position: Vec3, color: Color) {
+        if (!this.viewRoot) return;
+
+        const node = new Node(`marker_${text}`);
+        this.viewRoot.addChild(node);
+        node.setPosition(position);
+
+        const ui = node.addComponent(UITransform);
+        ui.setContentSize(80, 36);
+
+        const g = node.addComponent(Graphics);
+        g.fillColor = color;
+        g.rect(-36, -18, 72, 36);
+        g.fill();
+
+        const labelNode = new Node('label');
+        node.addChild(labelNode);
+        const labelUi = labelNode.addComponent(UITransform);
+        labelUi.setContentSize(80, 28);
+        const label = labelNode.addComponent(Label);
+        label.string = text;
+        label.fontSize = 18;
+        label.color = new Color(255, 255, 255, 255);
+    }
+
+    private drawHp(g: Graphics, enemy: EnemyState) {
+        const width = enemy.type === 'shield' ? 64 : 56;
+        const ratio = Math.max(0, Math.min(1, enemy.hp / enemy.maxHp));
+        g.clear();
+        g.fillColor = new Color(80, 230, 120, 255);
+        g.rect(-width / 2, -4, width * ratio, 8);
+        g.fill();
+    }
+
+    private getEnemyColor(type: EnemyState['type']) {
         if (type === 'shield') return new Color(70, 170, 255, 255);
         if (type === 'cavalry') return new Color(255, 190, 70, 255);
         if (type === 'archer') return new Color(80, 220, 120, 255);
