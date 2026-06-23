@@ -1,6 +1,8 @@
 import { Vec3 } from 'cc';
 import { EnemyType } from './WaveSystem';
 
+export type ArcherState = 'walk' | 'raise' | 'draw' | 'full' | 'release' | 'recover' | 'cooldown';
+
 export type EnemyState = {
     id: number;
     type: EnemyType;
@@ -11,6 +13,13 @@ export type EnemyState = {
     segmentIndex: number;
     reachedEnd: boolean;
     frozenRemain: number;
+
+    // v0.8.5.5：弓兵远程攻击状态。
+    rangedStopped: boolean;
+    rangedAttackX: number;
+    rangedAttackInterval: number;
+    archerState: ArcherState;
+    archerStateTimer: number;
 };
 
 export type EnemyRemovedReason = 'dead' | 'base_hit';
@@ -22,11 +31,12 @@ export type DamageResult = {
 };
 
 /**
- * v0.8.5.2 敌人平面路径系统。
+ * v0.8.5.5 敌人平面路径系统。
  *
  * 修复点：
- * - 恢复旧版移动节奏，速度不再像 v0.8.5 那样过快。
- * - 继续保留万箭齐发伤害和画地为牢冻结。
+ * - 恢复旧版弓兵机制：移动到射程点后停步。
+ * - 弓兵按 raise -> draw -> full -> release -> recover -> cooldown 循环拉弓射击。
+ * - 弓兵远程伤害城门，不再直接走到城门撞门。
  */
 export class EnemySystem {
 
@@ -36,24 +46,38 @@ export class EnemySystem {
 
     private readonly commonLanes = [-22, -6, 10, 26, 42];
     private readonly archerLanes = [-18, -2, 14, 30];
+    private readonly archerStopOffsets = [-72, -36, 0, 34, 68];
+
+    private readonly archerRaiseDuration = 0.10;
+    private readonly archerDrawDuration = 0.12;
+    private readonly archerFullDuration = 0.14;
+    private readonly archerReleaseDuration = 0.08;
+    private readonly archerRecoverDuration = 0.14;
 
     public onEnemySpawned: ((enemy: EnemyState) => void) | null = null;
     public onEnemyUpdated: ((enemy: EnemyState) => void) | null = null;
     public onEnemyRemoved: ((enemy: EnemyState, reason: EnemyRemovedReason) => void) | null = null;
     public onBaseHit: ((enemy: EnemyState) => void) | null = null;
+    public onRangedAttackGate: ((enemy: EnemyState) => void) | null = null;
 
     constructor(path: Vec3[]) {
         this.path = path.map(p => p.clone());
     }
 
     public spawnEnemy(type: EnemyType) {
+        const id = this.nextId++;
         const first = this.path[0] ?? new Vec3(-560, 24, 0);
         const stats = this.getStats(type);
         const lanes = type === 'archer' ? this.archerLanes : this.commonLanes;
-        const laneY = lanes[(this.nextId - 1) % lanes.length];
+        const laneY = lanes[(id - 1) % lanes.length];
+
+        const laneBias = laneY >= 20 ? -10 : laneY <= -10 ? 10 : 0;
+        const gateX = this.path[this.path.length - 1]?.x ?? 400;
+        const archerStopX = gateX - 560 + this.archerStopOffsets[(id - 1) % this.archerStopOffsets.length] + laneBias;
+        const archerInterval = 1.95 + ((id - 1) % 2) * 0.18;
 
         const enemy: EnemyState = {
-            id: this.nextId++,
+            id,
             type,
             hp: stats.hp,
             maxHp: stats.hp,
@@ -62,10 +86,16 @@ export class EnemySystem {
             segmentIndex: 0,
             reachedEnd: false,
             frozenRemain: 0,
+
+            rangedStopped: false,
+            rangedAttackX: type === 'archer' ? archerStopX : 0,
+            rangedAttackInterval: type === 'archer' ? archerInterval : 0,
+            archerState: 'walk',
+            archerStateTimer: 0,
         };
 
         this.enemies.push(enemy);
-        console.log(`[EnemySystem v0.8.5.2] spawned #${enemy.id} ${enemy.type}`);
+        console.log(`[EnemySystem v0.8.5.5] spawned #${enemy.id} ${enemy.type}`);
         this.onEnemySpawned?.(this.cloneEnemy(enemy));
     }
 
@@ -75,6 +105,12 @@ export class EnemySystem {
         for (const enemy of this.enemies) {
             if (enemy.frozenRemain > 0) {
                 enemy.frozenRemain = Math.max(0, enemy.frozenRemain - dt);
+                this.onEnemyUpdated?.(this.cloneEnemy(enemy));
+                continue;
+            }
+
+            if (enemy.type === 'archer') {
+                this.updateArcher(enemy, dt);
                 this.onEnemyUpdated?.(this.cloneEnemy(enemy));
                 continue;
             }
@@ -150,11 +186,70 @@ export class EnemySystem {
         }
     }
 
+    private updateArcher(enemy: EnemyState, dt: number) {
+        if (!enemy.rangedStopped) {
+            if (enemy.position.x >= enemy.rangedAttackX) {
+                enemy.rangedStopped = true;
+                enemy.position.x = enemy.rangedAttackX;
+                enemy.archerState = 'raise';
+                enemy.archerStateTimer = 0;
+                return;
+            }
+
+            enemy.position.x += enemy.speed * dt;
+            if (enemy.position.x >= enemy.rangedAttackX) {
+                enemy.position.x = enemy.rangedAttackX;
+                enemy.rangedStopped = true;
+                enemy.archerState = 'raise';
+                enemy.archerStateTimer = 0;
+            }
+            return;
+        }
+
+        enemy.archerStateTimer += dt;
+
+        if (enemy.archerState === 'raise' && enemy.archerStateTimer >= this.archerRaiseDuration) {
+            enemy.archerState = 'draw';
+            enemy.archerStateTimer = 0;
+            return;
+        }
+
+        if (enemy.archerState === 'draw' && enemy.archerStateTimer >= this.archerDrawDuration) {
+            enemy.archerState = 'full';
+            enemy.archerStateTimer = 0;
+            return;
+        }
+
+        if (enemy.archerState === 'full' && enemy.archerStateTimer >= this.archerFullDuration) {
+            enemy.archerState = 'release';
+            enemy.archerStateTimer = 0;
+            this.onRangedAttackGate?.(this.cloneEnemy(enemy));
+            return;
+        }
+
+        if (enemy.archerState === 'release' && enemy.archerStateTimer >= this.archerReleaseDuration) {
+            enemy.archerState = 'recover';
+            enemy.archerStateTimer = 0;
+            return;
+        }
+
+        if (enemy.archerState === 'recover' && enemy.archerStateTimer >= this.archerRecoverDuration) {
+            enemy.archerState = 'cooldown';
+            enemy.archerStateTimer = 0;
+            return;
+        }
+
+        if (enemy.archerState === 'cooldown' && enemy.archerStateTimer >= enemy.rangedAttackInterval) {
+            enemy.archerState = 'raise';
+            enemy.archerStateTimer = 0;
+        }
+    }
+
     private removeEnemy(enemy: EnemyState, reason: EnemyRemovedReason) {
         this.enemies = this.enemies.filter(e => e.id !== enemy.id);
 
         if (reason === 'base_hit') {
-            console.log(`[EnemySystem v0.8.5.2] enemy #${enemy.id} reached base`);
+            console.log(`[EnemySystem v0.8.5.5] enemy #${enemy.id} reached base`);
             this.onBaseHit?.(this.cloneEnemy(enemy));
         }
 
