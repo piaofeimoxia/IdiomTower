@@ -22,9 +22,9 @@ export type DamageResult = {
 };
 
 /**
- * v0.8.4 敌人平面路径系统。
+ * v0.8.5 敌人平面路径系统。
  *
- * 新增：
+ * 保留 v0.8.4：
  * - 全体伤害：万箭齐发
  * - 全体冻结：画地为牢
  */
@@ -65,7 +65,7 @@ export class EnemySystem {
         };
 
         this.enemies.push(enemy);
-        console.log(`[EnemySystem v0.8.4] spawned #${enemy.id} ${enemy.type}`);
+        console.log(`[EnemySystem v0.8.5] spawned #${enemy.id} ${enemy.type}`);
         this.onEnemySpawned?.(this.cloneEnemy(enemy));
     }
 
@@ -154,7 +154,7 @@ export class EnemySystem {
         this.enemies = this.enemies.filter(e => e.id !== enemy.id);
 
         if (reason === 'base_hit') {
-            console.log(`[EnemySystem v0.8.4] enemy #${enemy.id} reached base`);
+            console.log(`[EnemySystem v0.8.5] enemy #${enemy.id} reached base`);
             this.onBaseHit?.(this.cloneEnemy(enemy));
         }
 
