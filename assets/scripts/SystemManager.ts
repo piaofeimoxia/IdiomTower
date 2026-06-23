@@ -6,6 +6,7 @@ import './systems/ViewSystemSkillPatch';
 import './systems/ViewSystemArcherPatch';
 import './systems/ViewSystemRoguelitePatch';
 import './systems/ViewSystemRogueliteFlowPatch';
+import './systems/ViewSystemGameOverPatch';
 import type { RogueliteRewardOption } from './systems/ViewSystemRoguelitePatch';
 
 type IdiomDef = {
@@ -15,14 +16,13 @@ type IdiomDef = {
 };
 
 /**
- * v0.8.6.1 强关卡肉鸽核心修正版。
+ * v0.8.6.2 强关卡肉鸽核心修正版。
  *
  * 修复点：
- * - 战斗袋不再固定显示百步穿杨百百。
- * - 战斗袋使用后向前压缩，空位随时间从成语字池伪随机补入。
- * - 加入“弃左字”按钮，避免战斗袋卡死。
- * - 奖励三选一界面重排，减少文字重叠。
- * - 降低第一次奖励前的敌人压力。
+ * - 城门血量归零后立即判定失败。
+ * - 失败后停止刷怪、停止敌人行动、停止字袋补字。
+ * - 显示失败面板，并提供重新开始本局按钮。
+ * - 保留 v0.8.6.1 的战斗袋流转、弃字、奖励 UI 和开局低压。
  */
 export class SystemManager {
 
@@ -31,6 +31,9 @@ export class SystemManager {
     public readonly viewSystem: ViewSystem;
 
     private initialized = false;
+    private gameOver = false;
+    private rootNode: Node | null = null;
+
     private baseLife = 14;
     private baseShield = 0;
     private readonly maxBaseLife = 14;
@@ -80,11 +83,12 @@ export class SystemManager {
         };
 
         this.waveSystem.onSpawn = (type) => {
+            if (this.gameOver) return;
             this.enemySystem.spawnEnemy(type);
         };
 
         this.waveSystem.onWaveComplete = (cfg) => {
-            this.viewSystem.showTip(`刷怪完成：${cfg.name}`);
+            if (!this.gameOver) this.viewSystem.showTip(`刷怪完成：${cfg.name}`);
         };
 
         this.enemySystem.onEnemySpawned = (enemy) => {
@@ -92,7 +96,7 @@ export class SystemManager {
         };
 
         this.enemySystem.onEnemyUpdated = (enemy) => {
-            this.viewSystem.updateEnemy(enemy);
+            if (!this.gameOver) this.viewSystem.updateEnemy(enemy);
         };
 
         this.enemySystem.onEnemyRemoved = (enemy, reason) => {
@@ -105,6 +109,7 @@ export class SystemManager {
         };
 
         this.enemySystem.onRangedAttackGate = (enemy) => {
+            if (this.gameOver) return;
             (this.viewSystem as any).showArcherShot?.(enemy);
             this.applyBaseDamage(1, `弓兵 #${enemy.id} 远程射击城门`);
         };
@@ -115,8 +120,11 @@ export class SystemManager {
     }
 
     public initLevel(root: Node) {
-        console.log('[SystemManager v0.8.6.1] initLevel');
+        console.log('[SystemManager v0.8.6.2] initLevel');
 
+        this.rootNode = root;
+        this.initialized = false;
+        this.gameOver = false;
         this.baseLife = this.maxBaseLife;
         this.baseShield = 0;
         this.killCount = 0;
@@ -148,6 +156,13 @@ export class SystemManager {
     public tick(dt: number) {
         if (!this.initialized) return;
 
+        if (this.gameOver) {
+            this.viewSystem.updateHud(
+                `${this.waveSystem.getStatusText()} | FAILED | Lv.${this.rogueLevel} | kill=${this.killCount} | gate=${this.baseLife}/${this.maxBaseLife}`
+            );
+            return;
+        }
+
         if (this.discardCooldown > 0 && !this.rewardPaused) {
             this.discardCooldown = Math.max(0, this.discardCooldown - dt);
         }
@@ -169,11 +184,13 @@ export class SystemManager {
         this.suppressKillCount = false;
         this.viewSystem.clear();
         this.initialized = false;
+        this.gameOver = false;
+        this.rootNode = null;
     }
 
     private buildRogueLevelConfig(): Partial<LevelConfig> {
         return {
-            name: 'v0.8.6.1_rogue_bag_flow_wave',
+            name: 'v0.8.6.2_gate_fail_wave',
             totalEnemies: 180,
             spawnInterval: 1.45,
             enemyTypes: [
@@ -201,6 +218,7 @@ export class SystemManager {
     }
 
     private releaseIdiomSkill(idiom: string) {
+        if (this.gameOver) return;
         if (!this.unlockedIdioms.has(idiom)) {
             this.viewSystem.showTip(`尚未解锁：${idiom}`);
             return;
@@ -227,7 +245,7 @@ export class SystemManager {
 
         this.viewSystem.showEnemyHitFeedback(result.enemy, result.damage, result.killed);
         this.viewSystem.showTip(result.killed ? '百步穿杨！点杀最前方敌人' : `百步穿杨！造成 ${result.damage} 点伤害`);
-        console.log(`[SystemManager v0.8.6.1] skill 百步穿杨 damage=${result.damage}, killed=${result.killed}`);
+        console.log(`[SystemManager v0.8.6.2] skill 百步穿杨 damage=${result.damage}, killed=${result.killed}`);
         return true;
     }
 
@@ -247,7 +265,7 @@ export class SystemManager {
         }
 
         this.viewSystem.showTip(`万箭齐发！命中 ${hitCount} 个敌人`);
-        console.log(`[SystemManager v0.8.6.1] skill 万箭齐发 hit=${hitCount}`);
+        console.log(`[SystemManager v0.8.6.2] skill 万箭齐发 hit=${hitCount}`);
         return true;
     }
 
@@ -257,7 +275,7 @@ export class SystemManager {
         this.viewSystem.updateGate(this.baseLife, this.maxBaseLife, this.baseShield);
         this.viewSystem.showShieldEffect();
         this.viewSystem.showTip(`固若金汤！城门获得 ${shieldAmount} 点护盾`);
-        console.log(`[SystemManager v0.8.6.1] skill 固若金汤 shield=${this.baseShield}`);
+        console.log(`[SystemManager v0.8.6.2] skill 固若金汤 shield=${this.baseShield}`);
         return true;
     }
 
@@ -270,7 +288,7 @@ export class SystemManager {
         }
         this.viewSystem.showFreezeEffect(freezeSeconds);
         this.viewSystem.showTip(`画地为牢！冻结 ${count} 个敌人 ${freezeSeconds} 秒`);
-        console.log(`[SystemManager v0.8.6.1] skill 画地为牢 freeze=${count}`);
+        console.log(`[SystemManager v0.8.6.2] skill 画地为牢 freeze=${count}`);
         return true;
     }
 
@@ -289,7 +307,7 @@ export class SystemManager {
     }
 
     private discardLeftChar() {
-        if (this.rewardPaused) return;
+        if (this.gameOver || this.rewardPaused) return;
         if (this.discardCooldown > 0) {
             this.viewSystem.showTip(`弃字冷却中：${Math.ceil(this.discardCooldown)} 秒`);
             return;
@@ -349,13 +367,13 @@ export class SystemManager {
     }
 
     private onEnemyRemoved(_enemy: EnemyState, reason: EnemyRemovedReason) {
-        if (this.suppressKillCount || reason !== 'dead') return;
+        if (this.suppressKillCount || this.gameOver || reason !== 'dead') return;
         this.killCount++;
         this.tryOpenLevelReward();
     }
 
     private tryOpenLevelReward() {
-        if (this.rewardPaused) return;
+        if (this.rewardPaused || this.gameOver) return;
         const nextThreshold = this.levelKillThresholds[this.rogueLevel - 1];
         if (!nextThreshold || this.killCount < nextThreshold) return;
 
@@ -364,6 +382,7 @@ export class SystemManager {
         const options = this.generateRewardOptions();
         this.viewSystem.showTip(`升级到 Lv.${this.rogueLevel}，选择奖励`);
         (this.viewSystem as any).showRewardChoices(options, (option: RogueliteRewardOption) => {
+            if (this.gameOver) return;
             this.applyReward(option);
             this.rewardPaused = false;
         });
@@ -520,6 +539,7 @@ export class SystemManager {
     }
 
     private applyBaseDamage(damage: number, reason: string) {
+        if (this.gameOver) return;
         let remain = damage;
 
         if (this.baseShield > 0) {
@@ -535,6 +555,30 @@ export class SystemManager {
         }
 
         this.viewSystem.updateGate(this.baseLife, this.maxBaseLife, this.baseShield);
-        console.log(`[SystemManager v0.8.6.1] base damage=${damage}, life=${this.baseLife}, shield=${this.baseShield}`);
+        console.log(`[SystemManager v0.8.6.2] base damage=${damage}, life=${this.baseLife}, shield=${this.baseShield}`);
+
+        if (this.baseLife <= 0) {
+            this.triggerGameOver(reason);
+        }
+    }
+
+    private triggerGameOver(reason: string) {
+        if (this.gameOver) return;
+        this.gameOver = true;
+        this.rewardPaused = true;
+        this.baseLife = 0;
+        this.baseShield = 0;
+        this.viewSystem.updateGate(this.baseLife, this.maxBaseLife, this.baseShield);
+
+        this.suppressKillCount = true;
+        this.enemySystem.clear();
+        this.suppressKillCount = false;
+
+        this.battleBag = [];
+        this.refreshRogueliteTiles();
+        this.viewSystem.showTip('城门被破，守城失败');
+        (this.viewSystem as any).showRunFailedPanel?.(reason, this.killCount, this.rogueLevel, () => {
+            if (this.rootNode) this.initLevel(this.rootNode);
+        });
     }
 }
