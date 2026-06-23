@@ -3,14 +3,15 @@ import { WaveSystem, LevelConfig } from './systems/WaveSystem';
 import { EnemySystem } from './systems/EnemySystem';
 import { ViewSystem } from './systems/ViewSystem';
 import './systems/ViewSystemSkillPatch';
+import './systems/ViewSystemArcherPatch';
 
 /**
- * v0.8.5.4 稳定系统管理器。
+ * v0.8.5.5 稳定系统管理器。
  *
- * 保留 v0.8.5.3 行走动画修复，只优化万箭齐发的视觉表现：
- * - 箭雨缩小并上移
- * - 多个“击破”合并成一次统计提示
- * - 单体命中反馈改为小爆点，避免满屏黄字
+ * 保留 v0.8.5.4 万箭齐发视觉优化，并接回旧版弓兵机制：
+ * - 弓兵到射程点后停步
+ * - 拉弓/满弓/松弦/恢复/冷却状态循环
+ * - 远程射击城门并扣血/护盾
  */
 export class SystemManager {
 
@@ -30,7 +31,7 @@ export class SystemManager {
 
     constructor() {
         const level: Partial<LevelConfig> = {
-            name: 'v0.8.5.4_arrow_visual_wave',
+            name: 'v0.8.5.5_archer_ranged_wave',
             totalEnemies: 40,
             spawnInterval: 1.0,
             enemyTypes: ['basic', 'shield', 'basic', 'cavalry', 'archer'],
@@ -68,13 +69,18 @@ export class SystemManager {
             this.applyBaseDamage(1, `敌人 #${enemy.id} 攻到城门`);
         };
 
+        this.enemySystem.onRangedAttackGate = (enemy) => {
+            (this.viewSystem as any).showArcherShot?.(enemy);
+            this.applyBaseDamage(1, `弓兵 #${enemy.id} 远程射击城门`);
+        };
+
         this.viewSystem.onIdiomComplete = (idiom) => {
             this.releaseIdiomSkill(idiom);
         };
     }
 
     public initLevel(root: Node) {
-        console.log('[SystemManager v0.8.5.4] initLevel');
+        console.log('[SystemManager v0.8.5.5] initLevel');
 
         this.baseLife = this.maxBaseLife;
         this.baseShield = 0;
@@ -82,7 +88,7 @@ export class SystemManager {
         this.viewSystem.updateGate(this.baseLife, this.maxBaseLife, this.baseShield);
         this.enemySystem.clear();
         this.waveSystem.reset({
-            name: 'v0.8.5.4_arrow_visual_wave',
+            name: 'v0.8.5.5_archer_ranged_wave',
             totalEnemies: 40,
             spawnInterval: 1.0,
             enemyTypes: ['basic', 'shield', 'basic', 'cavalry', 'archer'],
@@ -130,10 +136,8 @@ export class SystemManager {
         const results = this.enemySystem.damageAll(9999);
         const hitCount = results.length;
 
-        // v0.8.5.4：由补丁版 showArrowRainEffect 统一显示技能名和击破统计。
         (this.viewSystem as any).showArrowRainEffect(hitCount);
 
-        // 单体反馈只保留小爆点，并限制数量，避免满屏“击破”。
         const maxBurstCount = Math.min(8, results.length);
         for (let i = 0; i < maxBurstCount; i++) {
             const result = results[i];
@@ -141,7 +145,7 @@ export class SystemManager {
         }
 
         this.viewSystem.showTip(`万箭齐发！命中 ${hitCount} 个敌人`);
-        console.log(`[SystemManager v0.8.5.4] skill 万箭齐发 hit=${hitCount}`);
+        console.log(`[SystemManager v0.8.5.5] skill 万箭齐发 hit=${hitCount}`);
     }
 
     private releaseGuRuoJinTang() {
@@ -150,7 +154,7 @@ export class SystemManager {
         this.viewSystem.updateGate(this.baseLife, this.maxBaseLife, this.baseShield);
         this.viewSystem.showShieldEffect();
         this.viewSystem.showTip(`固若金汤！城门获得 ${shieldAmount} 点护盾`);
-        console.log(`[SystemManager v0.8.5.4] skill 固若金汤 shield=${this.baseShield}`);
+        console.log(`[SystemManager v0.8.5.5] skill 固若金汤 shield=${this.baseShield}`);
     }
 
     private releaseHuaDiWeiLao() {
@@ -158,7 +162,7 @@ export class SystemManager {
         const count = this.enemySystem.freezeAll(freezeSeconds);
         this.viewSystem.showFreezeEffect(freezeSeconds);
         this.viewSystem.showTip(`画地为牢！冻结 ${count} 个敌人 ${freezeSeconds} 秒`);
-        console.log(`[SystemManager v0.8.5.4] skill 画地为牢 freeze=${count}`);
+        console.log(`[SystemManager v0.8.5.5] skill 画地为牢 freeze=${count}`);
     }
 
     private applyBaseDamage(damage: number, reason: string) {
@@ -177,6 +181,6 @@ export class SystemManager {
         }
 
         this.viewSystem.updateGate(this.baseLife, this.maxBaseLife, this.baseShield);
-        console.log(`[SystemManager v0.8.5.4] base damage=${damage}, life=${this.baseLife}, shield=${this.baseShield}`);
+        console.log(`[SystemManager v0.8.5.5] base damage=${damage}, life=${this.baseLife}, shield=${this.baseShield}`);
     }
 }
