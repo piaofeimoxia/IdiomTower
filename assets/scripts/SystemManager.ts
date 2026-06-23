@@ -1,51 +1,73 @@
-import { LevelSystem } from './systems/LevelSystem';
-import { WaveSystem } from './systems/WaveSystem';
-import { SkillSystem } from './systems/SkillSystem';
-import { EnemySystem } from './systems/EnemySystem';
-import { LetterSystem } from './systems/LetterSystem';
-import { ViewSystem } from './systems/ViewSystem';
 import { Node } from 'cc';
+import { WaveSystem, LevelConfig } from './systems/WaveSystem';
+import { ViewSystem } from './systems/ViewSystem';
 
+/**
+ * v0.8.1 稳定系统管理器。
+ *
+ * 这一版只接回最小闭环：
+ * GameBootstrap -> SystemManager -> WaveSystem -> ViewSystem
+ * 暂不接 EnemySystem / LetterSystem / SkillSystem，避免旧系统再次造成黑屏。
+ */
 export class SystemManager {
 
-    public levelSystem = new LevelSystem();
-    public waveSystem: WaveSystem;
-    public skillSystem = new SkillSystem();
-    public enemySystem = new EnemySystem();
-    public letterSystem = new LetterSystem();
-    public viewSystem = new ViewSystem();
+    public readonly waveSystem: WaveSystem;
+    public readonly viewSystem: ViewSystem;
+
+    private initialized = false;
 
     constructor() {
-        this.waveSystem = new WaveSystem(this.levelSystem.current);
+        const level: Partial<LevelConfig> = {
+            name: 'v0.8.1_stable_wave',
+            totalEnemies: 30,
+            spawnInterval: 1.0,
+            enemyTypes: ['basic', 'shield'],
+        };
 
-        // Wave -> systems bridge (render + logic)
-        this.waveSystem.onSpawn = (type: string) => {
-            this.enemySystem.spawnEnemy?.(type);
-            this.viewSystem.spawnEnemy(type);
+        this.waveSystem = new WaveSystem(level);
+        this.viewSystem = new ViewSystem();
+
+        this.waveSystem.onWaveStart = (cfg) => {
+            this.viewSystem.updateHud(`Wave start: ${cfg.name}`);
+        };
+
+        this.waveSystem.onSpawn = (type, payload) => {
+            this.viewSystem.spawnEnemy(type, payload);
+            this.viewSystem.updateHud(`Spawn ${payload.index}/${payload.total}: ${type}`);
+        };
+
+        this.waveSystem.onWaveComplete = (cfg) => {
+            this.viewSystem.updateHud(`Wave complete: ${cfg.name}`);
         };
     }
 
-    initLevel(root: Node) {
-        // bind render root (Canvas)
+    public initLevel(root: Node) {
+        console.log('[SystemManager v0.8.1] initLevel');
+
         this.viewSystem.init(root);
+        this.waveSystem.reset({
+            name: 'v0.8.1_stable_wave',
+            totalEnemies: 30,
+            spawnInterval: 1.0,
+            enemyTypes: ['basic', 'shield'],
+        });
+        this.waveSystem.start();
 
-        this.waveSystem.reset(this.levelSystem.current);
-
-        if (this.levelSystem.init) {
-            this.levelSystem.init();
-        }
+        this.initialized = true;
     }
 
-    tick(dt: number) {
-        this.levelSystem.tick?.(dt);
+    public tick(dt: number) {
+        if (!this.initialized) return;
+
         this.waveSystem.tick(dt);
-        this.skillSystem.tick?.(dt);
-        this.enemySystem.tick?.(dt);
-        this.letterSystem.tick?.(dt);
+        this.viewSystem.tick(dt);
+
+        // 保持 HUD 有状态，即使当前秒没有新刷怪。
+        this.viewSystem.updateHud(this.waveSystem.getStatusText());
     }
 
-    nextLevel() {
-        this.levelSystem.nextLevel?.();
-        this.waveSystem.reset(this.levelSystem.current);
+    public destroy() {
+        this.viewSystem.clear();
+        this.initialized = false;
     }
 }
