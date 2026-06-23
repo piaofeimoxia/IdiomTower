@@ -3,26 +3,32 @@ import type { EnemyState, EnemyRemovedReason } from './EnemySystem';
 
 export type PathPoint = Vec3;
 
+type EnemyMotionType = 'basic' | 'shield' | 'cavalry' | 'archer';
+
 type EnemyView = {
     node: Node;
+    spriteRoot: Node | null;
+    frameNodes: Node[];
+    fallbackRoot: Node | null;
     hpFill: Graphics;
-    sprite: Sprite | null;
-    frames: SpriteFrame[];
-    frameIndex: number;
-    lastFrameTime: number;
+    shadowNode: Node | null;
+    seqIndex: number;
+    animTimer: number;
+    motionType: EnemyMotionType;
 };
+
 type SlotView = { node: Node; char: string; tile: TileView | null };
 type TileView = { node: Node; char: string; homePos: Vec3; slotIndex: number; dragging: boolean };
 type EnemyVisualSize = { w: number; h: number; fallback: string };
 
 /**
- * ViewSystem v0.8.5.2
+ * ViewSystem v0.8.5.3
  *
  * 修复重点：
- * - 敌人不再使用静态大图，而是恢复旧版 walk_0~walk_3 行走动画帧。
- * - 动画帧加载成功时只显示动画 Sprite，不叠加编号、方块和静态图。
- * - 贴图失败时才显示 fallback 方块和文字。
- * - 尺寸、层级、地面、城门、字块继续沿用 v0.8.5.1 修正版。
+ * - 严格恢复旧版 GameManager + Enemy 的动画播放方式。
+ * - 不再用一个 Sprite 反复替换 spriteFrame。
+ * - 改为旧版的多个 frame node，通过 active 切换帧。
+ * - 普通兵恢复旧版 [0,1,2,1] 序列，避开第 3 帧，避免头部忽大忽小。
  */
 export class ViewSystem {
     private root: Node | null = null;
@@ -44,6 +50,15 @@ export class ViewSystem {
     private path: PathPoint[] = [];
 
     public onIdiomComplete: ((idiom: string) => void) | null = null;
+
+    private readonly basicSequence = [0, 1, 2, 1];
+    private readonly basicDurations = [0.20, 0.10, 0.20, 0.10];
+    private readonly shieldSequence = [0, 1, 2, 3];
+    private readonly shieldDurations = [0.18, 0.10, 0.18, 0.10];
+    private readonly cavalrySequence = [0, 1, 2, 3];
+    private readonly cavalryDurations = [0.16, 0.12, 0.16, 0.12];
+    private readonly archerWalkSequence = [0, 1, 2, 3];
+    private readonly archerWalkDurations = [0.18, 0.10, 0.18, 0.10];
 
     private readonly texturePath: Record<string, string> = {
         title: 'textures/ui_title',
@@ -112,9 +127,9 @@ export class ViewSystem {
         this.createHud();
         this.createSlots();
         this.createCharTiles();
-        this.showTip('v0.8.5.2：已恢复旧版行走动画帧，避免静态贴图白块');
+        this.showTip('v0.8.5.3：恢复旧版帧序列，修复走动时头部忽大忽小');
 
-        console.log('[ViewSystem v0.8.5.2] initialized');
+        console.log('[ViewSystem v0.8.5.3] initialized');
     }
 
     public updateHud(text: string) {
@@ -136,17 +151,18 @@ export class ViewSystem {
         if (!this.enemyLayer) return;
 
         const size = this.getEnemyVisualSize(enemy.type);
+        const motionType = this.getEnemyMotionType(enemy.type);
         const node = new Node(`enemy_${enemy.type}_${enemy.id}`);
         this.enemyLayer.addChild(node);
         node.setPosition(enemy.position.x, enemy.position.y + this.getEnemyYOffset(enemy.type));
         node.addComponent(UITransform).setContentSize(size.w, size.h);
 
+        const shadowNode = this.createEnemyShadow(node, motionType);
+
         const spriteRoot = new Node(`${node.name}_sprite_root`);
         node.addChild(spriteRoot);
         spriteRoot.setPosition(0, 0, 0);
         spriteRoot.addComponent(UITransform).setContentSize(size.w, size.h);
-        const sprite = spriteRoot.addComponent(Sprite);
-        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
 
         const hpWidth = Math.min(size.w, 88);
         const hpBgNode = new Node('hp_bg');
@@ -166,11 +182,14 @@ export class ViewSystem {
 
         const view: EnemyView = {
             node,
+            spriteRoot,
+            frameNodes: [],
+            fallbackRoot: null,
             hpFill,
-            sprite,
-            frames: [],
-            frameIndex: 0,
-            lastFrameTime: Date.now(),
+            shadowNode,
+            seqIndex: motionType === 'archer' ? 0 : Math.floor(Math.random() * this.getSequence(motionType).length),
+            animTimer: 0,
+            motionType,
         };
         this.enemyViews.set(enemy.id, view);
 
@@ -178,28 +197,25 @@ export class ViewSystem {
             if (!node.isValid || !spriteRoot.isValid) return;
 
             if (frames.length > 0) {
-                view.frames = frames;
-                view.frameIndex = 0;
-                sprite.spriteFrame = frames[0];
-                console.log(`[ViewSystem v0.8.5.2] walk frames loaded: ${enemy.type}, count=${frames.length}`);
+                view.frameNodes = this.appendAnimatedFrames(spriteRoot, node.name, frames, size.w, size.h);
+                this.applyFramePose(view, enemy);
+                console.log(`[ViewSystem v0.8.5.3] walk frame nodes loaded: ${enemy.type}, count=${frames.length}`);
             } else {
-                // 只有动画帧全失败时才回退静态图；再失败才显示文字方块。
-                this.tryLoadSprite(this.getEnemyTexturePaths(enemy.type), 0, spriteRoot, size.w, size.h, () => {
-                    this.createFallbackBox(spriteRoot, size.w, size.h, size.fallback, 28);
-                });
+                const fallback = this.createImageNode(spriteRoot, `${node.name}_fallback`, this.getEnemyTexturePaths(enemy.type), 0, 0, size.w, size.h, size.fallback, 28);
+                view.fallbackRoot = fallback;
             }
         });
 
         this.updateEnemy(enemy);
         this.refreshEnemyDepthOrder();
-        console.log(`[ViewSystem v0.8.5.2] enemy created: #${enemy.id} ${enemy.type}`);
+        console.log(`[ViewSystem v0.8.5.3] enemy created: #${enemy.id} ${enemy.type}`);
     }
 
     public updateEnemy(enemy: EnemyState) {
         const view = this.enemyViews.get(enemy.id);
         if (!view || !view.node.isValid) return;
         view.node.setPosition(enemy.position.x, enemy.position.y + this.getEnemyYOffset(enemy.type));
-        this.animateEnemyView(view, enemy);
+        this.updateEnemyAnimation(view, enemy);
         this.drawHp(view.hpFill, enemy);
         this.refreshEnemyDepthOrder();
     }
@@ -209,22 +225,11 @@ export class ViewSystem {
         if (!view) return;
         this.enemyViews.delete(enemy.id);
         if (view.node.isValid) view.node.destroy();
-        console.log(`[ViewSystem v0.8.5.2] enemy removed: #${enemy.id}, reason=${reason}`);
+        console.log(`[ViewSystem v0.8.5.3] enemy removed: #${enemy.id}, reason=${reason}`);
     }
 
     public showArrowRainEffect() {
-        const effect = this.createImageNode(
-            this.effectLayer,
-            'effect_arrow_rain',
-            [this.texturePath.effect_arrow_rain],
-            0,
-            35,
-            260,
-            195,
-            '',
-            0
-        );
-
+        const effect = this.createImageNode(this.effectLayer, 'effect_arrow_rain', [this.texturePath.effect_arrow_rain], 0, 35, 260, 195, '', 0);
         this.createFloatingText('万箭齐发！', 0, 90, new Color(255, 240, 120, 255));
         tween(effect)
             .to(0.16, { scale: new Vec3(1.15, 1.15, 1) })
@@ -236,18 +241,7 @@ export class ViewSystem {
 
     public showShieldEffect() {
         const gateX = this.path.length > 0 ? this.path[this.path.length - 1].x : 400;
-        const effect = this.createImageNode(
-            this.effectLayer,
-            'effect_blue_shield',
-            [this.texturePath.effect_blue_shield],
-            gateX,
-            85,
-            150,
-            150,
-            '',
-            0
-        );
-
+        const effect = this.createImageNode(this.effectLayer, 'effect_blue_shield', [this.texturePath.effect_blue_shield], gateX, 85, 150, 150, '', 0);
         this.createFloatingText('固若金汤！', gateX, 135, new Color(120, 220, 255, 255));
         tween(effect)
             .to(0.18, { scale: new Vec3(1.18, 1.18, 1) })
@@ -259,12 +253,10 @@ export class ViewSystem {
 
     public showFreezeEffect(seconds: number) {
         if (!this.effectLayer) return;
-
         const field = new Node('freeze_field');
         this.effectLayer.addChild(field);
         field.setPosition(0, 8);
         field.addComponent(UITransform).setContentSize(1040, 88);
-
         const g = field.addComponent(Graphics);
         g.fillColor = new Color(90, 170, 255, 58);
         g.roundRect(-520, -44, 1040, 88, 24);
@@ -273,7 +265,6 @@ export class ViewSystem {
         g.lineWidth = 3;
         g.roundRect(-520, -44, 1040, 88, 24);
         g.stroke();
-
         this.createFloatingText(`画地为牢！冻结 ${seconds} 秒`, 0, 95, new Color(145, 220, 255, 255));
         tween(field)
             .to(0.14, { scale: new Vec3(1.03, 1.12, 1) })
@@ -299,7 +290,6 @@ export class ViewSystem {
         g.fillColor = killed ? new Color(255, 190, 90, 220) : new Color(255, 255, 255, 145);
         g.circle(0, 0, size / 2);
         g.fill();
-
         tween(burst)
             .to(0.10, { scale: new Vec3(1.25, 1.25, 1) })
             .to(0.12, { scale: new Vec3(0.1, 0.1, 1) })
@@ -331,12 +321,11 @@ export class ViewSystem {
     }
 
     private recreateViewRoot(root: Node) {
-        for (const name of ['VIEW_ROOT_v0_8_5_2', 'VIEW_ROOT_v0_8_5_1', 'VIEW_ROOT_v0_8_5', 'VIEW_ROOT_v0_8_4', 'VIEW_ROOT_v0_8_3_1', 'VIEW_ROOT_v0_8_3', 'VIEW_ROOT_v0_8_2', 'VIEW_ROOT_v0_8_1']) {
+        for (const name of ['VIEW_ROOT_v0_8_5_3', 'VIEW_ROOT_v0_8_5_2', 'VIEW_ROOT_v0_8_5_1', 'VIEW_ROOT_v0_8_5', 'VIEW_ROOT_v0_8_4', 'VIEW_ROOT_v0_8_3_1', 'VIEW_ROOT_v0_8_3', 'VIEW_ROOT_v0_8_2', 'VIEW_ROOT_v0_8_1']) {
             const old = root.getChildByName(name);
             if (old && old.isValid) old.destroy();
         }
-
-        const viewRoot = new Node('VIEW_ROOT_v0_8_5_2');
+        const viewRoot = new Node('VIEW_ROOT_v0_8_5_3');
         viewRoot.addComponent(UITransform).setContentSize(1280, 720);
         root.addChild(viewRoot);
         this.viewRoot = viewRoot;
@@ -371,14 +360,12 @@ export class ViewSystem {
         this.createGroundBand('ground_band_back', 0, -10, 1120, 118, new Color(35, 32, 24, 255));
         this.createGroundBand('ground_band_mid', 0, -2, 1060, 86, new Color(62, 52, 38, 235));
         this.createGroundBand('ground_band_front', 0, 8, 1000, 54, new Color(96, 80, 54, 220));
-
         const tileY = 10;
         const startX = -460;
         const gap = 112;
         for (let i = 0; i < 9; i++) {
             this.createImageNode(this.groundLayer, `ground_tile_${i}`, [this.texturePath.groundTile], startX + i * gap, tileY, 110, 56, '', 0);
         }
-
         const gateX = this.path.length > 0 ? this.path[this.path.length - 1].x : 400;
         this.createImageNode(this.groundLayer, 'ground_tile_gate_1', [this.texturePath.groundTile], gateX - 58, tileY, 110, 56, '', 0);
         this.createImageNode(this.groundLayer, 'ground_tile_gate_2', [this.texturePath.groundTile], gateX + 54, tileY, 110, 56, '', 0);
@@ -422,7 +409,7 @@ export class ViewSystem {
     }
 
     private createHud() {
-        this.hudLabel = this.createText(this.uiLayer, 'hud', 'SystemManager v0.8.5.2 ready...', 0, 255, 20, new Color(190, 220, 255, 255)).getComponent(Label);
+        this.hudLabel = this.createText(this.uiLayer, 'hud', 'SystemManager v0.8.5.3 ready...', 0, 255, 20, new Color(190, 220, 255, 255)).getComponent(Label);
         this.tipLabel = this.createText(this.uiLayer, 'tip', '', 0, 225, 20, new Color(255, 230, 170, 255)).getComponent(Label);
     }
 
@@ -442,7 +429,6 @@ export class ViewSystem {
         const gap = 96;
         const row1Y = -272;
         const row2Y = -348;
-
         for (let i = 0; i < chars.length; i++) {
             const ch = chars[i];
             const row = i < 5 ? 0 : 1;
@@ -487,13 +473,11 @@ export class ViewSystem {
         if (!tile.dragging) return;
         tile.dragging = false;
         tile.node.setScale(1, 1, 1);
-
         const slotIndex = this.findNearestEmptySlot(tile.node.position);
         if (slotIndex < 0) {
             this.resetTile(tile);
             return;
         }
-
         const slot = this.slots[slotIndex];
         slot.char = tile.char;
         slot.tile = tile;
@@ -541,21 +525,108 @@ export class ViewSystem {
         tile.node.setPosition(tile.homePos);
     }
 
+    private appendAnimatedFrames(spriteRoot: Node, namePrefix: string, frames: SpriteFrame[], w: number, h: number) {
+        const frameNodes: Node[] = [];
+        for (let i = 0; i < frames.length; i++) {
+            const frameNode = new Node(`${namePrefix}_frame_${i}`);
+            spriteRoot.addChild(frameNode);
+            frameNode.setPosition(0, 0);
+            frameNode.addComponent(UITransform).setContentSize(w, h);
+            const sprite = frameNode.addComponent(Sprite);
+            sprite.spriteFrame = frames[i];
+            sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            frameNode.active = i === 0;
+            frameNodes.push(frameNode);
+        }
+        return frameNodes;
+    }
+
+    private setActiveFrame(view: EnemyView, activeIndex: number) {
+        if (view.frameNodes.length <= 0) return;
+        const idx = Math.max(0, Math.min(activeIndex, view.frameNodes.length - 1));
+        for (let i = 0; i < view.frameNodes.length; i++) {
+            const n = view.frameNodes[i];
+            if (n && n.isValid) n.active = i === idx;
+        }
+    }
+
+    private updateEnemyAnimation(view: EnemyView, enemy: EnemyState) {
+        if (!view.spriteRoot || view.frameNodes.length <= 0) return;
+        const seq = this.getSequence(view.motionType);
+        const durations = this.getDurations(view.motionType);
+
+        if (enemy.frozenRemain > 0) {
+            view.seqIndex = 0;
+            this.applyFramePose(view, enemy);
+            return;
+        }
+
+        view.animTimer += 1 / 60;
+        const duration = durations[view.seqIndex % durations.length] ?? 0.14;
+        if (view.animTimer >= duration) {
+            view.animTimer = 0;
+            view.seqIndex = (view.seqIndex + 1) % seq.length;
+        }
+        this.applyFramePose(view, enemy);
+    }
+
+    private applyFramePose(view: EnemyView, enemy: EnemyState) {
+        const seq = this.getSequence(view.motionType);
+        const frameIndex = seq[view.seqIndex % seq.length] ?? 0;
+        this.setActiveFrame(view, frameIndex);
+
+        if (view.spriteRoot && view.spriteRoot.isValid) {
+            let yOffset = 0;
+            let xOffset = 0;
+            if (view.motionType === 'cavalry') {
+                yOffset = 0;
+            } else if (view.motionType === 'archer') {
+                yOffset = (frameIndex === 1 || frameIndex === 3) ? 1 : 0;
+            } else {
+                yOffset = (frameIndex === 1 || frameIndex === 3) ? 1 : 0;
+            }
+            view.spriteRoot.setPosition(xOffset, yOffset, 0);
+        }
+
+        if (view.shadowNode && view.shadowNode.isValid) {
+            let scaleX = 1.0;
+            if (view.motionType === 'cavalry') {
+                scaleX = (frameIndex === 1 || frameIndex === 3) ? 0.97 : 1.02;
+            } else if (view.motionType === 'archer') {
+                scaleX = (frameIndex === 1 || frameIndex === 3) ? 0.92 : 1.0;
+            } else {
+                scaleX = (frameIndex === 1 || frameIndex === 3) ? 0.92 : 1.0;
+            }
+            view.shadowNode.setScale(scaleX, 1, 1);
+        }
+    }
+
+    private createEnemyShadow(parent: Node, motionType: EnemyMotionType) {
+        const shadowNode = new Node('enemy_shadow');
+        parent.addChild(shadowNode);
+        shadowNode.setSiblingIndex(0);
+        const isCavalry = motionType === 'cavalry';
+        shadowNode.setPosition(0, isCavalry ? -36 : -24);
+        shadowNode.addComponent(UITransform).setContentSize(isCavalry ? 84 : 34, isCavalry ? 18 : 10);
+        const g = shadowNode.addComponent(Graphics);
+        g.fillColor = new Color(0, 0, 0, 72);
+        g.ellipse(0, 0, isCavalry ? 39 : 15, isCavalry ? 8 : 4);
+        g.fill();
+        return shadowNode;
+    }
+
     private createImageNode(parent: Node | null, name: string, resourcePaths: string[], x: number, y: number, w: number, h: number, fallbackText: string, fallbackFontSize: number) {
         const node = new Node(name);
         if (parent) parent.addChild(node);
         node.setPosition(x, y);
         node.addComponent(UITransform).setContentSize(w, h);
-
         const spriteNode = new Node(`${name}_sprite`);
         node.addChild(spriteNode);
         spriteNode.setPosition(0, 0);
         spriteNode.addComponent(UITransform).setContentSize(w, h);
-
         this.tryLoadSprite(resourcePaths, 0, spriteNode, w, h, () => {
             this.createFallbackBox(spriteNode, w, h, fallbackText, fallbackFontSize);
         });
-
         return node;
     }
 
@@ -564,15 +635,13 @@ export class ViewSystem {
             onFail();
             return;
         }
-
         const path = `${resourcePaths[index]}/spriteFrame`;
         resources.load(path, SpriteFrame, (err, spriteFrame) => {
             if (err || !spriteFrame) {
-                console.warn(`[ViewSystem v0.8.5.2] texture load failed: ${path}`);
+                console.warn(`[ViewSystem v0.8.5.3] texture load failed: ${path}`);
                 this.tryLoadSprite(resourcePaths, index + 1, spriteNode, w, h, onFail);
                 return;
             }
-
             if (!spriteNode || !spriteNode.isValid) return;
             let sprite = spriteNode.getComponent(Sprite);
             if (!sprite) sprite = spriteNode.addComponent(Sprite);
@@ -586,24 +655,19 @@ export class ViewSystem {
     private loadSpriteFrameList(paths: string[], done: (frames: SpriteFrame[]) => void) {
         const frames: SpriteFrame[] = new Array(paths.length);
         let remain = paths.length;
-
         if (paths.length === 0) {
             done([]);
             return;
         }
-
         paths.forEach((p, index) => {
             resources.load(`${p}/spriteFrame`, SpriteFrame, (err, spriteFrame) => {
                 remain--;
                 if (!err && spriteFrame) {
                     frames[index] = spriteFrame;
                 } else {
-                    console.warn(`[ViewSystem v0.8.5.2] walk frame load failed: ${p}/spriteFrame`);
+                    console.warn(`[ViewSystem v0.8.5.3] walk frame load failed: ${p}/spriteFrame`);
                 }
-
-                if (remain <= 0) {
-                    done(frames.filter(Boolean));
-                }
+                if (remain <= 0) done(frames.filter(Boolean));
             });
         });
     }
@@ -618,10 +682,7 @@ export class ViewSystem {
         g.lineWidth = 2;
         g.roundRect(-w / 2, -h / 2, w, h, 12);
         g.stroke();
-
-        if (text) {
-            this.createLabel(parent, `${parent.name}_label`, text, 0, 0, w, h, fontSize, Color.WHITE);
-        }
+        if (text) this.createLabel(parent, `${parent.name}_label`, text, 0, 0, w, h, fontSize, Color.WHITE);
     }
 
     private createText(parent: Node | null, name: string, text: string, x: number, y: number, size: number, color: Color) {
@@ -656,28 +717,7 @@ export class ViewSystem {
 
     private createFloatingText(text: string, x: number, y: number, color: Color) {
         const node = this.createText(this.effectLayer, `float_${text}`, text, x, y, 34, color);
-        tween(node)
-            .by(0.6, { position: new Vec3(0, 90, 0) })
-            .call(() => node.destroy())
-            .start();
-    }
-
-    private animateEnemyView(view: EnemyView, enemy: EnemyState) {
-        if (!view.sprite || view.frames.length <= 1) return;
-
-        if (enemy.frozenRemain > 0) {
-            view.frameIndex = 0;
-            view.sprite.spriteFrame = view.frames[0];
-            return;
-        }
-
-        const now = Date.now();
-        const interval = enemy.type === 'cavalry' ? 90 : 125;
-        if (now - view.lastFrameTime < interval) return;
-
-        view.lastFrameTime = now;
-        view.frameIndex = (view.frameIndex + 1) % view.frames.length;
-        view.sprite.spriteFrame = view.frames[view.frameIndex];
+        tween(node).by(0.6, { position: new Vec3(0, 90, 0) }).call(() => node.destroy()).start();
     }
 
     private drawHp(g: Graphics, enemy: EnemyState) {
@@ -685,9 +725,7 @@ export class ViewSystem {
         const width = Math.min(size.w, 88);
         const ratio = Math.max(0, Math.min(1, enemy.hp / enemy.maxHp));
         g.clear();
-        g.fillColor = enemy.frozenRemain > 0
-            ? new Color(120, 220, 255, 255)
-            : new Color(80, 230, 120, 255);
+        g.fillColor = enemy.frozenRemain > 0 ? new Color(120, 220, 255, 255) : new Color(80, 230, 120, 255);
         g.rect(-width / 2, -4, width * ratio, 8);
         g.fill();
     }
@@ -702,10 +740,7 @@ export class ViewSystem {
                 if (ay !== by) return by - ay;
                 return a.node.position.x - b.node.position.x;
             });
-
-        for (let i = 0; i < valid.length; i++) {
-            valid[i].node.setSiblingIndex(i);
-        }
+        for (let i = 0; i < valid.length; i++) valid[i].node.setSiblingIndex(i);
     }
 
     private getEnemyVisualSize(type: EnemyState['type']): EnemyVisualSize {
@@ -720,40 +755,32 @@ export class ViewSystem {
         return 0;
     }
 
+    private getEnemyMotionType(type: EnemyState['type']): EnemyMotionType {
+        if (type === 'shield') return 'shield';
+        if (type === 'cavalry') return 'cavalry';
+        if (type === 'archer') return 'archer';
+        return 'basic';
+    }
+
+    private getSequence(type: EnemyMotionType) {
+        if (type === 'shield') return this.shieldSequence;
+        if (type === 'cavalry') return this.cavalrySequence;
+        if (type === 'archer') return this.archerWalkSequence;
+        return this.basicSequence;
+    }
+
+    private getDurations(type: EnemyMotionType) {
+        if (type === 'shield') return this.shieldDurations;
+        if (type === 'cavalry') return this.cavalryDurations;
+        if (type === 'archer') return this.archerWalkDurations;
+        return this.basicDurations;
+    }
+
     private getEnemyWalkFramePaths(type: EnemyState['type']) {
-        if (type === 'shield') {
-            return [
-                this.texturePath.enemy_shield_walk_0,
-                this.texturePath.enemy_shield_walk_1,
-                this.texturePath.enemy_shield_walk_2,
-                this.texturePath.enemy_shield_walk_3,
-            ];
-        }
-
-        if (type === 'cavalry') {
-            return [
-                this.texturePath.enemy_cavalry_walk_0,
-                this.texturePath.enemy_cavalry_walk_1,
-                this.texturePath.enemy_cavalry_walk_2,
-                this.texturePath.enemy_cavalry_walk_3,
-            ];
-        }
-
-        if (type === 'archer') {
-            return [
-                this.texturePath.enemy_archer_walk_0,
-                this.texturePath.enemy_archer_walk_1,
-                this.texturePath.enemy_archer_walk_2,
-                this.texturePath.enemy_archer_walk_3,
-            ];
-        }
-
-        return [
-            this.texturePath.enemy_basic_walk_0,
-            this.texturePath.enemy_basic_walk_1,
-            this.texturePath.enemy_basic_walk_2,
-            this.texturePath.enemy_basic_walk_3,
-        ];
+        if (type === 'shield') return [this.texturePath.enemy_shield_walk_0, this.texturePath.enemy_shield_walk_1, this.texturePath.enemy_shield_walk_2, this.texturePath.enemy_shield_walk_3];
+        if (type === 'cavalry') return [this.texturePath.enemy_cavalry_walk_0, this.texturePath.enemy_cavalry_walk_1, this.texturePath.enemy_cavalry_walk_2, this.texturePath.enemy_cavalry_walk_3];
+        if (type === 'archer') return [this.texturePath.enemy_archer_walk_0, this.texturePath.enemy_archer_walk_1, this.texturePath.enemy_archer_walk_2, this.texturePath.enemy_archer_walk_3];
+        return [this.texturePath.enemy_basic_walk_0, this.texturePath.enemy_basic_walk_1, this.texturePath.enemy_basic_walk_2, this.texturePath.enemy_basic_walk_3];
     }
 
     private getEnemyTexturePaths(type: EnemyState['type']) {
