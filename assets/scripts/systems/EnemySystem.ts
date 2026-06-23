@@ -15,16 +15,18 @@ export type EnemyState = {
 export type EnemyRemovedReason = 'dead' | 'base_hit';
 
 /**
- * v0.8.3 敌人正式路径系统。
+ * v0.8.3.1 敌人平面路径系统。
  *
- * 只负责敌人数据、路径移动、到达终点判定。
- * 不直接创建 Cocos 节点，渲染交给 ViewSystem。
+ * 修复点：恢复旧版横向路径平面，敌人按多条 y 车道从左往右推进。
  */
 export class EnemySystem {
 
     private readonly path: Vec3[];
     private enemies: EnemyState[] = [];
     private nextId = 1;
+
+    private readonly commonLanes = [-22, -6, 10, 26, 42];
+    private readonly archerLanes = [-18, -2, 14, 30];
 
     public onEnemySpawned: ((enemy: EnemyState) => void) | null = null;
     public onEnemyUpdated: ((enemy: EnemyState) => void) | null = null;
@@ -36,8 +38,10 @@ export class EnemySystem {
     }
 
     public spawnEnemy(type: EnemyType) {
-        const first = this.path[0] ?? new Vec3(-560, 0, 0);
+        const first = this.path[0] ?? new Vec3(-560, 24, 0);
         const stats = this.getStats(type);
+        const lanes = type === 'archer' ? this.archerLanes : this.commonLanes;
+        const laneY = lanes[(this.nextId - 1) % lanes.length];
 
         const enemy: EnemyState = {
             id: this.nextId++,
@@ -45,23 +49,21 @@ export class EnemySystem {
             hp: stats.hp,
             maxHp: stats.hp,
             speed: stats.speed,
-            position: first.clone(),
+            position: new Vec3(first.x, laneY, first.z),
             segmentIndex: 0,
             reachedEnd: false,
         };
 
         this.enemies.push(enemy);
-        console.log(`[EnemySystem v0.8.3] spawned #${enemy.id} ${enemy.type}`);
+        console.log(`[EnemySystem v0.8.3.1] spawned #${enemy.id} ${enemy.type}`);
         this.onEnemySpawned?.(this.cloneEnemy(enemy));
     }
 
     public tick(dt: number) {
-        if (this.path.length < 2) return;
-
         const removed: { enemy: EnemyState; reason: EnemyRemovedReason }[] = [];
 
         for (const enemy of this.enemies) {
-            this.moveAlongPath(enemy, dt);
+            this.moveFlatLane(enemy, dt);
 
             if (enemy.reachedEnd) {
                 removed.push({ enemy, reason: 'base_hit' });
@@ -71,10 +73,8 @@ export class EnemySystem {
             this.onEnemyUpdated?.(this.cloneEnemy(enemy));
         }
 
-        if (removed.length > 0) {
-            for (const item of removed) {
-                this.removeEnemy(item.enemy, item.reason);
-            }
+        for (const item of removed) {
+            this.removeEnemy(item.enemy, item.reason);
         }
     }
 
@@ -90,45 +90,13 @@ export class EnemySystem {
         }
     }
 
-    private moveAlongPath(enemy: EnemyState, dt: number) {
-        let remainDistance = enemy.speed * dt;
+    private moveFlatLane(enemy: EnemyState, dt: number) {
+        const target = this.path[this.path.length - 1] ?? new Vec3(400, 24, 0);
+        enemy.position.x += enemy.speed * dt;
 
-        while (remainDistance > 0 && !enemy.reachedEnd) {
-            const nextPoint = this.path[enemy.segmentIndex + 1];
-            if (!nextPoint) {
-                enemy.reachedEnd = true;
-                return;
-            }
-
-            const dx = nextPoint.x - enemy.position.x;
-            const dy = nextPoint.y - enemy.position.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            if (distance <= 0.001) {
-                enemy.segmentIndex++;
-                if (enemy.segmentIndex >= this.path.length - 1) {
-                    enemy.reachedEnd = true;
-                }
-                continue;
-            }
-
-            if (remainDistance >= distance) {
-                enemy.position.set(nextPoint.x, nextPoint.y, nextPoint.z);
-                remainDistance -= distance;
-                enemy.segmentIndex++;
-
-                if (enemy.segmentIndex >= this.path.length - 1) {
-                    enemy.reachedEnd = true;
-                }
-            } else {
-                const ratio = remainDistance / distance;
-                enemy.position.set(
-                    enemy.position.x + dx * ratio,
-                    enemy.position.y + dy * ratio,
-                    enemy.position.z,
-                );
-                remainDistance = 0;
-            }
+        if (enemy.position.x >= target.x) {
+            enemy.position.x = target.x;
+            enemy.reachedEnd = true;
         }
     }
 
@@ -136,7 +104,7 @@ export class EnemySystem {
         this.enemies = this.enemies.filter(e => e.id !== enemy.id);
 
         if (reason === 'base_hit') {
-            console.log(`[EnemySystem v0.8.3] enemy #${enemy.id} reached base`);
+            console.log(`[EnemySystem v0.8.3.1] enemy #${enemy.id} reached base`);
             this.onBaseHit?.(this.cloneEnemy(enemy));
         }
 
