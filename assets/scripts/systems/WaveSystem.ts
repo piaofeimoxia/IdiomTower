@@ -1,22 +1,33 @@
+import { EventBus } from '../EventBus';
+
 export type LevelConfig = { name:string; totalEnemies:number; spawnInterval:number };
 
 export class WaveSystem {
-    private timer=0;
-    private spawned=0;
+    private timer = 0;
+    private spawned = 0;
 
-    constructor(private level:LevelConfig){}
+    constructor(private level: LevelConfig) {}
 
-    onSpawn?:()=>void;
+    tick(dt: number) {
+        if (this.spawned >= this.level.totalEnemies) return;
 
-    tick(dt:number){
-        if(this.spawned>=this.level.totalEnemies) return;
-        this.timer+=dt;
-        if(this.timer>=this.level.spawnInterval){
-            this.timer=0;
+        this.timer += dt;
+
+        if (this.timer >= this.level.spawnInterval) {
+            this.timer = 0;
             this.spawned++;
-            this.onSpawn?.();
+
+            // Event-driven spawn
+            EventBus.instance.emit('enemy.spawn', {
+                wave: this.level.name,
+                index: this.spawned
+            });
         }
     }
 
-    reset(){ this.timer=0; this.spawned=0; }
+    reset(level?: LevelConfig) {
+        this.timer = 0;
+        this.spawned = 0;
+        if (level) this.level = level;
+    }
 }
