@@ -10,14 +10,23 @@ export type EnemyState = {
     position: Vec3;
     segmentIndex: number;
     reachedEnd: boolean;
+    frozenRemain: number;
 };
 
 export type EnemyRemovedReason = 'dead' | 'base_hit';
 
+export type DamageResult = {
+    enemy: EnemyState;
+    damage: number;
+    killed: boolean;
+};
+
 /**
- * v0.8.3.1 敌人平面路径系统。
+ * v0.8.4 敌人平面路径系统。
  *
- * 修复点：恢复旧版横向路径平面，敌人按多条 y 车道从左往右推进。
+ * 新增：
+ * - 全体伤害：万箭齐发
+ * - 全体冻结：画地为牢
  */
 export class EnemySystem {
 
@@ -52,10 +61,11 @@ export class EnemySystem {
             position: new Vec3(first.x, laneY, first.z),
             segmentIndex: 0,
             reachedEnd: false,
+            frozenRemain: 0,
         };
 
         this.enemies.push(enemy);
-        console.log(`[EnemySystem v0.8.3.1] spawned #${enemy.id} ${enemy.type}`);
+        console.log(`[EnemySystem v0.8.4] spawned #${enemy.id} ${enemy.type}`);
         this.onEnemySpawned?.(this.cloneEnemy(enemy));
     }
 
@@ -63,6 +73,12 @@ export class EnemySystem {
         const removed: { enemy: EnemyState; reason: EnemyRemovedReason }[] = [];
 
         for (const enemy of this.enemies) {
+            if (enemy.frozenRemain > 0) {
+                enemy.frozenRemain = Math.max(0, enemy.frozenRemain - dt);
+                this.onEnemyUpdated?.(this.cloneEnemy(enemy));
+                continue;
+            }
+
             this.moveFlatLane(enemy, dt);
 
             if (enemy.reachedEnd) {
@@ -76,6 +92,40 @@ export class EnemySystem {
         for (const item of removed) {
             this.removeEnemy(item.enemy, item.reason);
         }
+    }
+
+    public damageAll(amount: number): DamageResult[] {
+        const results: DamageResult[] = [];
+        const removed: EnemyState[] = [];
+
+        for (const enemy of this.enemies) {
+            enemy.hp = Math.max(0, enemy.hp - amount);
+            const killed = enemy.hp <= 0;
+            const snapshot = this.cloneEnemy(enemy);
+            results.push({ enemy: snapshot, damage: amount, killed });
+
+            if (killed) {
+                removed.push(enemy);
+            } else {
+                this.onEnemyUpdated?.(snapshot);
+            }
+        }
+
+        for (const enemy of removed) {
+            this.removeEnemy(enemy, 'dead');
+        }
+
+        return results;
+    }
+
+    public freezeAll(seconds: number): number {
+        let count = 0;
+        for (const enemy of this.enemies) {
+            enemy.frozenRemain = Math.max(enemy.frozenRemain, seconds);
+            count++;
+            this.onEnemyUpdated?.(this.cloneEnemy(enemy));
+        }
+        return count;
     }
 
     public getAliveCount() {
@@ -104,7 +154,7 @@ export class EnemySystem {
         this.enemies = this.enemies.filter(e => e.id !== enemy.id);
 
         if (reason === 'base_hit') {
-            console.log(`[EnemySystem v0.8.3.1] enemy #${enemy.id} reached base`);
+            console.log(`[EnemySystem v0.8.4] enemy #${enemy.id} reached base`);
             this.onBaseHit?.(this.cloneEnemy(enemy));
         }
 
