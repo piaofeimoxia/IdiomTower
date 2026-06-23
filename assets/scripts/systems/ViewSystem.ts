@@ -1,4 +1,4 @@
-import { Node, UITransform, Color, Graphics, Vec3, Label, EventTouch, tween } from 'cc';
+import { Node, UITransform, Color, Graphics, Vec3, Label, EventTouch, tween, resources, SpriteFrame, Sprite } from 'cc';
 import type { EnemyState, EnemyRemovedReason } from './EnemySystem';
 
 export type PathPoint = Vec3;
@@ -21,6 +21,37 @@ export class ViewSystem {
 
     public onIdiomComplete: ((idiom: string) => void) | null = null;
 
+    private readonly texturePath: Record<string, string> = {
+        title: 'textures/ui_title',
+        gate: 'textures/gate',
+        slot: 'textures/slot_empty',
+        groundTile: 'textures/env_stone_path_tile',
+
+        tile_wan: 'textures/tile_wan',
+        tile_jian: 'textures/tile_jian',
+        tile_qi: 'textures/tile_qi',
+        tile_fa: 'textures/tile_fa',
+        tile_gu: 'textures/tile_gu',
+        tile_ruo: 'textures/tile_ruo',
+        tile_jin: 'textures/tile_jin',
+        tile_tang: 'textures/tile_tang',
+        tile_hua: 'textures/tile_hua',
+        tile_di: 'textures/tile_di',
+        tile_wei: 'textures/tile_wei',
+        tile_lao: 'textures/tile_lao',
+        tile_huo: 'textures/tile_huo',
+        tile_tu: 'textures/tile_tu',
+
+        enemy_basic: 'textures/enemy_basic_soldier',
+        enemy_shield: 'textures/enemy_shield_soldier',
+        enemy_cavalry: 'textures/enemy_cavalry',
+        enemy_archer: 'textures/enemy_archer',
+
+        effect_arrow_rain: 'textures/effect_arrow_rain',
+        effect_blue_shield: 'textures/effect_blue_shield',
+        effect_cage_trap: 'textures/effect_cage_trap',
+    };
+
     public init(root: Node, path: PathPoint[]) {
         this.root = root;
         this.path = path.map(p => p.clone());
@@ -38,9 +69,9 @@ export class ViewSystem {
         this.createHud();
         this.createSlots();
         this.createCharTiles();
-        this.showTip('v0.8.4：技能效果已接回，可释放万箭齐发 / 固若金汤 / 画地为牢');
+        this.showTip('v0.8.5：敌人 / 场景 / 技能贴图已接回，贴图失败时保留图形兜底');
 
-        console.log('[ViewSystem v0.8.4] initialized');
+        console.log('[ViewSystem v0.8.5] initialized');
     }
 
     public updateHud(text: string) {
@@ -66,13 +97,14 @@ export class ViewSystem {
         node.setPosition(enemy.position);
 
         const size = enemy.type === 'shield' ? 64 : 56;
-        node.addComponent(UITransform).setContentSize(size, size + 16);
+        node.addComponent(UITransform).setContentSize(size + 18, size + 22);
 
         const body = node.addComponent(Graphics);
         body.fillColor = this.getEnemyColor(enemy.type);
         body.rect(-size / 2, -size / 2, size, size);
         body.fill();
 
+        this.tryAttachSpriteNode(node, this.getEnemyTexture(enemy.type), size + 22, size + 22, 'enemy_sprite');
         this.createLabel(node, 'enemy_label', `${enemy.id}`, 0, -5, size, 26, 20, Color.WHITE);
 
         const hpBgNode = new Node('hp_bg');
@@ -92,7 +124,7 @@ export class ViewSystem {
 
         this.enemyViews.set(enemy.id, { node, hpFill });
         this.updateEnemy(enemy);
-        console.log(`[ViewSystem v0.8.4] enemy created: #${enemy.id} ${enemy.type}`);
+        console.log(`[ViewSystem v0.8.5] enemy created: #${enemy.id} ${enemy.type}`);
     }
 
     public updateEnemy(enemy: EnemyState) {
@@ -107,7 +139,7 @@ export class ViewSystem {
         if (!view) return;
         this.enemyViews.delete(enemy.id);
         if (view.node.isValid) view.node.destroy();
-        console.log(`[ViewSystem v0.8.4] enemy removed: #${enemy.id}, reason=${reason}`);
+        console.log(`[ViewSystem v0.8.5] enemy removed: #${enemy.id}, reason=${reason}`);
     }
 
     public showArrowRainEffect() {
@@ -126,6 +158,8 @@ export class ViewSystem {
         bg.lineWidth = 3;
         bg.roundRect(-540, -60, 1080, 120, 24);
         bg.stroke();
+
+        this.tryAttachSpriteNode(effect, this.texturePath.effect_arrow_rain, 300, 220, 'effect_arrow_rain_sprite');
 
         for (let i = 0; i < 14; i++) {
             const arrow = new Node(`arrow_${i}`);
@@ -152,6 +186,7 @@ export class ViewSystem {
     public showShieldEffect() {
         const gateX = this.path.length > 0 ? this.path[this.path.length - 1].x : 400;
         const effect = this.createRoundBox('skill_shield_effect', gateX, 78, 190, 170, new Color(70, 175, 255, 60), '', 0, 28);
+        this.tryAttachSpriteNode(effect, this.texturePath.effect_blue_shield, 170, 170, 'effect_blue_shield_sprite');
         const g = effect.addComponent(Graphics);
         g.strokeColor = new Color(130, 220, 255, 210);
         g.lineWidth = 5;
@@ -169,6 +204,7 @@ export class ViewSystem {
 
     public showFreezeEffect(seconds: number) {
         const effect = this.createRoundBox('skill_freeze_field', 0, 24, 1080, 122, new Color(90, 175, 255, 55), '', 0, 24);
+        this.tryAttachSpriteNode(effect, this.texturePath.effect_cage_trap, 260, 170, 'effect_cage_trap_sprite');
         const g = effect.addComponent(Graphics);
         g.strokeColor = new Color(160, 225, 255, 175);
         g.lineWidth = 4;
@@ -225,11 +261,11 @@ export class ViewSystem {
     }
 
     private recreateViewRoot(root: Node) {
-        for (const name of ['VIEW_ROOT_v0_8_4', 'VIEW_ROOT_v0_8_3_1', 'VIEW_ROOT_v0_8_3', 'VIEW_ROOT_v0_8_2', 'VIEW_ROOT_v0_8_1']) {
+        for (const name of ['VIEW_ROOT_v0_8_5', 'VIEW_ROOT_v0_8_4', 'VIEW_ROOT_v0_8_3_1', 'VIEW_ROOT_v0_8_3', 'VIEW_ROOT_v0_8_2', 'VIEW_ROOT_v0_8_1']) {
             const old = root.getChildByName(name);
             if (old && old.isValid) old.destroy();
         }
-        const viewRoot = new Node('VIEW_ROOT_v0_8_4');
+        const viewRoot = new Node('VIEW_ROOT_v0_8_5');
         viewRoot.addComponent(UITransform).setContentSize(1280, 720);
         root.addChild(viewRoot);
         this.viewRoot = viewRoot;
@@ -251,7 +287,8 @@ export class ViewSystem {
         this.createRoundBox('ground_mid', 0, 18, 1030, 96, new Color(62, 52, 38, 235), '', 0, 18);
         this.createRoundBox('ground_front', 0, 24, 960, 58, new Color(96, 80, 54, 220), '', 0, 14);
         for (let i = 0; i < 10; i++) {
-            this.createRoundBox(`stone_${i}`, -505 + i * 112, 26, 100, 46, new Color(120, 112, 96, 210), '', 0, 10);
+            const stone = this.createRoundBox(`stone_${i}`, -505 + i * 112, 26, 100, 46, new Color(120, 112, 96, 210), '', 0, 10);
+            this.tryAttachSpriteNode(stone, this.texturePath.groundTile, 110, 56, 'stone_sprite');
         }
     }
 
@@ -270,18 +307,22 @@ export class ViewSystem {
     private createGate() {
         const gateX = this.path.length > 0 ? this.path[this.path.length - 1].x : 400;
         const gateY = 74;
-        this.createRoundBox('gate_body', gateX, gateY, 118, 132, new Color(118, 70, 48, 255), '城门', 26, 12);
+        const gateBody = this.createRoundBox('gate_body', gateX, gateY, 118, 132, new Color(118, 70, 48, 255), '', 0, 12);
+        this.tryAttachSpriteNode(gateBody, this.texturePath.gate, 168, 160, 'gate_sprite');
+        this.createLabel(gateBody, 'gate_label', '城门', 0, 0, 118, 40, 26, Color.WHITE);
         this.createRoundBox('gate_top', gateX, gateY + 77, 142, 32, new Color(150, 96, 58, 255), '', 0, 8);
         const label = this.createText('gate_hp', '城门血量：10/10', gateX, gateY + 125, 22, Color.WHITE);
         this.gateLabel = label.getComponent(Label);
     }
 
     private createTitle() {
-        this.createText('title', '成语塔防 v0.8.4 - 技能效果接回版', 0, 305, 31, new Color(255, 230, 120, 255));
+        const titleHolder = this.createRoundBox('title_image_holder', 0, 305, 520, 86, new Color(0, 0, 0, 0), '', 0, 0);
+        this.tryAttachSpriteNode(titleHolder, this.texturePath.title, 520, 86, 'title_sprite');
+        this.createText('title', '成语塔防 v0.8.5 - 贴图接回版', 0, 305, 31, new Color(255, 230, 120, 255));
     }
 
     private createHud() {
-        this.hudLabel = this.createText('hud', 'SystemManager v0.8.4 ready...', 0, 255, 20, new Color(190, 220, 255, 255)).getComponent(Label);
+        this.hudLabel = this.createText('hud', 'SystemManager v0.8.5 ready...', 0, 255, 20, new Color(190, 220, 255, 255)).getComponent(Label);
         this.tipLabel = this.createText('tip', '', 0, 225, 20, new Color(255, 230, 170, 255)).getComponent(Label);
     }
 
@@ -290,6 +331,7 @@ export class ViewSystem {
         const gap = 112;
         for (let i = 0; i < 4; i++) {
             const node = this.createRoundBox(`slot_${i}`, -gap * 1.5 + i * gap, y, 84, 84, new Color(42, 50, 66, 235), '', 0, 12);
+            this.tryAttachSpriteNode(node, this.texturePath.slot, 92, 92, 'slot_sprite');
             this.slots.push({ node, char: '', tile: null });
         }
         this.createText('slot_tip', '拖动字块到四个成语槽', 0, -152, 20, new Color(180, 205, 230, 255));
@@ -309,7 +351,9 @@ export class ViewSystem {
 
     private createTile(char: string, index: number, x: number, y: number) {
         if (!this.viewRoot) return;
-        const node = this.createRoundBox(`tile_${char}_${index}`, x, y, 48, 48, new Color(206, 150, 64, 255), char, 28, 9);
+        const node = this.createRoundBox(`tile_${char}_${index}`, x, y, 48, 48, new Color(206, 150, 64, 255), '', 0, 9);
+        this.tryAttachSpriteNode(node, this.getTileTexture(char), 56, 56, 'tile_sprite');
+        this.createLabel(node, `tile_${char}_label`, char, 0, 0, 48, 48, 28, Color.WHITE);
         const tile: TileView = { node, char, homePos: new Vec3(x, y, 0), slotIndex: -1, dragging: false };
         this.tiles.push(tile);
         node.on(Node.EventType.TOUCH_START, () => this.onTileTouchStart(tile), this);
@@ -443,6 +487,29 @@ export class ViewSystem {
         return node;
     }
 
+    private tryAttachSpriteNode(parent: Node, texturePath: string, width: number, height: number, name: string) {
+        if (!parent || !parent.isValid || !texturePath) return null;
+
+        const spriteNode = new Node(name);
+        parent.addChild(spriteNode);
+        spriteNode.setPosition(new Vec3(0, 0, 0));
+        spriteNode.addComponent(UITransform).setContentSize(width, height);
+        const sprite = spriteNode.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+
+        resources.load(`${texturePath}/spriteFrame`, SpriteFrame, (err, spriteFrame) => {
+            if (!spriteNode.isValid) return;
+            if (err || !spriteFrame) {
+                console.warn(`[ViewSystem v0.8.5] texture load failed: ${texturePath}/spriteFrame`);
+                spriteNode.destroy();
+                return;
+            }
+            sprite.spriteFrame = spriteFrame;
+        });
+
+        return spriteNode;
+    }
+
     private drawHp(g: Graphics, enemy: EnemyState) {
         const width = enemy.type === 'shield' ? 64 : 56;
         const ratio = Math.max(0, Math.min(1, enemy.hp / enemy.maxHp));
@@ -452,6 +519,33 @@ export class ViewSystem {
             : new Color(80, 230, 120, 255);
         g.rect(-width / 2, -4, width * ratio, 8);
         g.fill();
+    }
+
+    private getEnemyTexture(type: EnemyState['type']) {
+        if (type === 'shield') return this.texturePath.enemy_shield;
+        if (type === 'cavalry') return this.texturePath.enemy_cavalry;
+        if (type === 'archer') return this.texturePath.enemy_archer;
+        return this.texturePath.enemy_basic;
+    }
+
+    private getTileTexture(char: string) {
+        const map: Record<string, string> = {
+            '万': this.texturePath.tile_wan,
+            '箭': this.texturePath.tile_jian,
+            '齐': this.texturePath.tile_qi,
+            '发': this.texturePath.tile_fa,
+            '固': this.texturePath.tile_gu,
+            '若': this.texturePath.tile_ruo,
+            '金': this.texturePath.tile_jin,
+            '汤': this.texturePath.tile_tang,
+            '画': this.texturePath.tile_hua,
+            '地': this.texturePath.tile_di,
+            '为': this.texturePath.tile_wei,
+            '牢': this.texturePath.tile_lao,
+            '火': this.texturePath.tile_huo,
+            '土': this.texturePath.tile_tu,
+        };
+        return map[char] || this.texturePath.tile_wan;
     }
 
     private getEnemyColor(type: EnemyState['type']) {
