@@ -1,5 +1,8 @@
 import { Node, UITransform, Color, Graphics, Vec3, Label, EventTouch, tween, resources, SpriteFrame, Sprite } from 'cc';
-import type { EnemyState, EnemyRemovedReason } from './EnemySystem';
+import type { DamageResult, EnemyState, EnemyRemovedReason } from './EnemySystem';
+import type { RogueliteRewardOption, RewardRarity } from '../core/RewardTypes';
+import { RewardSelection } from '../core/RewardSelection';
+import type { RunSummary } from '../core/RunSummary';
 
 export type PathPoint = Vec3;
 
@@ -48,6 +51,8 @@ export class ViewSystem {
     private slots: SlotView[] = [];
     private tiles: TileView[] = [];
     private path: PathPoint[] = [];
+    private rewardRoot: Node | null = null;
+    private failRoot: Node | null = null;
 
     public onIdiomComplete: ((idiom: string) => void) | null = null;
 
@@ -297,6 +302,234 @@ export class ViewSystem {
             .start();
     }
 
+    public showRewardChoices(
+        options: RogueliteRewardOption[],
+        pickCount: number,
+        onComplete: (selected: RogueliteRewardOption[]) => void,
+    ) {
+        const parent = this.effectLayer ?? this.uiLayer;
+        if (!parent || !parent.isValid) return;
+
+        if (this.rewardRoot && this.rewardRoot.isValid) this.rewardRoot.destroy();
+        const root = new Node('reward_cancelable_pick_root');
+        parent.addChild(root);
+        root.addComponent(UITransform).setContentSize(1280, 720);
+        this.rewardRoot = root;
+
+        this.createPanel(root, 'reward_backdrop', 0, 0, 930, 456, new Color(18, 24, 34, 250), new Color(150, 180, 215, 145), 20);
+        this.createSizedText(root, 'reward_title', `升级奖励：${options.length} 选 ${pickCount}`, 0, 184, 830, 42, 32, new Color(255, 236, 170, 255));
+        const statusNode = this.createSizedText(
+            root,
+            'reward_status',
+            `已选 0/${pickCount}，点击已选卡片可取消`,
+            0,
+            150,
+            830,
+            30,
+            20,
+            new Color(190, 220, 240, 255),
+        );
+        const statusLabel = statusNode.getComponent(Label)!;
+        const positions = [
+            new Vec3(-290, 60, 0),
+            new Vec3(0, 60, 0),
+            new Vec3(290, 60, 0),
+            new Vec3(-145, -112, 0),
+            new Vec3(145, -112, 0),
+        ];
+        const selection = new RewardSelection<RogueliteRewardOption>(pickCount, option => option.id);
+        const overlays = new Map<string, Node[]>();
+        let completed = false;
+
+        const confirm = this.createPanel(root, 'confirm_btn', 0, -198, 190, 48, new Color(62, 68, 78, 245), new Color(150, 165, 185, 150), 14);
+        const confirmText = this.createSizedText(confirm, 'confirm_text', `先选择 ${pickCount} 个`, 0, 0, 170, 30, 22, new Color(170, 180, 192, 255));
+        const confirmLabel = confirmText.getComponent(Label)!;
+
+        const refreshStatus = () => {
+            const count = selection.values().length;
+            if (selection.canConfirm()) {
+                this.setSizedLabel(statusLabel, `已选 ${count}/${pickCount}，可确认；点击已选卡片可取消`, 20, new Color(255, 232, 170, 255));
+                this.setSizedLabel(confirmLabel, '确认选择', 22, Color.WHITE);
+            } else {
+                this.setSizedLabel(statusLabel, `已选 ${count}/${pickCount}，点击已选卡片可取消`, 20, new Color(190, 220, 240, 255));
+                this.setSizedLabel(confirmLabel, `先选择 ${pickCount} 个`, 22, new Color(170, 180, 192, 255));
+            }
+        };
+
+        const rarityName: Record<RewardRarity, string> = {
+            common: '普通',
+            rare: '稀有',
+            epic: '史诗',
+            gold: '金色',
+        };
+        const rarityColor: Record<RewardRarity, Color> = {
+            common: new Color(230, 232, 224, 255),
+            rare: new Color(110, 190, 255, 255),
+            epic: new Color(198, 135, 255, 255),
+            gold: new Color(255, 214, 86, 255),
+        };
+        const rarityPanelColor: Record<RewardRarity, Color> = {
+            common: new Color(52, 58, 66, 252),
+            rare: new Color(30, 62, 104, 252),
+            epic: new Color(70, 42, 102, 252),
+            gold: new Color(118, 78, 28, 252),
+        };
+
+        for (let i = 0; i < Math.min(5, options.length); i++) {
+            const option = options[i];
+            const pos = positions[i];
+            const card = this.createPanel(root, `reward_card_${i}`, pos.x, pos.y, 220, 142, rarityPanelColor[option.rarity], rarityColor[option.rarity], 16);
+            this.createSizedText(card, `rarity_${i}`, rarityName[option.rarity], 0, 48, 184, 22, 16, rarityColor[option.rarity]);
+            this.createSizedText(card, `title_${i}`, option.title, 0, 14, 186, 40, 22, Color.WHITE);
+            this.createSizedText(card, `desc_${i}`, option.desc, 0, -36, 186, 48, 15, new Color(220, 232, 240, 255));
+
+            const toggle = () => {
+                if (completed) return;
+                const result = selection.toggle(option);
+                if (result === 'full') {
+                    this.setSizedLabel(statusLabel, `已经选满 ${pickCount} 个，先取消一个再换`, 20, new Color(255, 190, 150, 255));
+                    return;
+                }
+                if (result === 'unselected') {
+                    for (const node of overlays.get(option.id) ?? []) {
+                        if (node.isValid) node.destroy();
+                    }
+                    overlays.delete(option.id);
+                    refreshStatus();
+                    return;
+                }
+
+                const badge = this.createPanel(card, `selected_badge_${i}`, 0, 0, 218, 140, new Color(255, 236, 160, 38), new Color(255, 238, 150, 230), 16);
+                const selectedText = this.createSizedText(card, `selected_text_${i}`, '已选择 / 再点取消', 0, -62, 180, 22, 16, new Color(255, 240, 160, 255));
+                overlays.set(option.id, [badge, selectedText]);
+                tween(card).to(0.08, { scale: new Vec3(1.04, 1.04, 1) }).to(0.08, { scale: new Vec3(1, 1, 1) }).start();
+                refreshStatus();
+            };
+
+            card.on(Node.EventType.TOUCH_END, toggle, this);
+            card.on(Node.EventType.MOUSE_UP, toggle, this);
+        }
+
+        const confirmAction = () => {
+            if (completed) return;
+            const selected = selection.confirm();
+            if (!selected) {
+                this.setSizedLabel(statusLabel, `还需要再选 ${pickCount - selection.values().length} 个奖励`, 20, new Color(255, 190, 150, 255));
+                return;
+            }
+            completed = true;
+            if (this.rewardRoot && this.rewardRoot.isValid) this.rewardRoot.destroy();
+            this.rewardRoot = null;
+            onComplete(selected);
+        };
+        confirm.on(Node.EventType.TOUCH_END, confirmAction, this);
+        confirm.on(Node.EventType.MOUSE_UP, confirmAction, this);
+    }
+
+    public showBaiBuPierceEffect(results: DamageResult[]) {
+        const parent = this.effectLayer ?? this.uiLayer;
+        if (!parent || !parent.isValid || results.length <= 0) return;
+
+        const root = new Node('baibu_pierce_effect');
+        parent.addChild(root);
+        root.addComponent(UITransform).setContentSize(1280, 720);
+        const xs = results.map(result => result.enemy.position.x);
+        const ys = results.map(result => result.enemy.position.y + 28);
+        const minX = Math.min(...xs) - 38;
+        const maxX = Math.max(...xs) + 56;
+        const y = ys.reduce((sum, value) => sum + value, 0) / ys.length;
+
+        const line = new Node('pierce_line');
+        root.addChild(line);
+        line.addComponent(UITransform).setContentSize(1280, 720);
+        const graphics = line.addComponent(Graphics);
+        graphics.strokeColor = new Color(255, 232, 130, 230);
+        graphics.lineWidth = 8;
+        graphics.moveTo(minX, y);
+        graphics.lineTo(maxX, y + 8);
+        graphics.stroke();
+        graphics.strokeColor = new Color(255, 255, 245, 220);
+        graphics.lineWidth = 3;
+        graphics.moveTo(minX + 8, y + 2);
+        graphics.lineTo(maxX - 8, y + 10);
+        graphics.stroke();
+
+        for (const result of results) {
+            const burst = new Node('pierce_burst');
+            root.addChild(burst);
+            burst.setPosition(result.enemy.position.x, result.enemy.position.y + 28, 0);
+            burst.addComponent(UITransform).setContentSize(46, 46);
+            const burstGraphics = burst.addComponent(Graphics);
+            burstGraphics.fillColor = result.killed ? new Color(255, 200, 85, 210) : new Color(255, 245, 170, 170);
+            burstGraphics.circle(0, 0, result.killed ? 23 : 16);
+            burstGraphics.fill();
+            tween(burst).to(0.10, { scale: new Vec3(1.25, 1.25, 1) }).to(0.16, { scale: new Vec3(0.2, 0.2, 1) }).start();
+        }
+
+        this.createSizedText(
+            root,
+            'pierce_text',
+            results.length >= 2 ? `百步穿杨 · 贯穿 x${results.length}` : '百步穿杨！',
+            0,
+            112,
+            620,
+            40,
+            30,
+            new Color(255, 236, 145, 255),
+        );
+        tween(root).delay(0.46).call(() => root.destroy()).start();
+    }
+
+    public showRunFailedPanel(summary: RunSummary, onRetry: () => void, onRevive?: () => void) {
+        const parent = this.effectLayer ?? this.uiLayer;
+        if (!parent || !parent.isValid) return;
+
+        if (this.failRoot && this.failRoot.isValid) this.failRoot.destroy();
+        const root = new Node('run_failed_root');
+        parent.addChild(root);
+        root.addComponent(UITransform).setContentSize(1280, 720);
+        this.failRoot = root;
+
+        this.createPanel(root, 'fail_panel', 0, 8, 620, 300, new Color(34, 28, 32, 250), new Color(255, 150, 130, 170), 20);
+        this.createSizedText(root, 'fail_title', '城门被破', 0, 100, 540, 48, 36, new Color(255, 190, 170, 255));
+        this.createSizedText(root, 'fail_reason', summary.reason ?? '守城失败', 0, 54, 540, 36, 21, new Color(230, 220, 210, 255));
+        this.createSizedText(
+            root,
+            'fail_stat',
+            `击杀：${summary.killCount}    等级：Lv.${summary.rogueLevel ?? 1}`,
+            0,
+            15,
+            540,
+            30,
+            22,
+            new Color(255, 232, 170, 255),
+        );
+        this.createSizedText(root, 'fail_hint', '失败后战斗已暂停', 0, -28, 540, 30, 18, new Color(190, 210, 225, 255));
+
+        const retryX = onRevive ? 110 : 0;
+        const retry = this.createPanel(root, 'retry_btn', retryX, -92, 190, 54, new Color(96, 62, 58, 245), new Color(255, 205, 160, 150), 14);
+        this.createSizedText(retry, 'retry_text', '重新开始', 0, 0, 170, 34, 24, Color.WHITE);
+        const retryAction = () => {
+            if (this.failRoot && this.failRoot.isValid) this.failRoot.destroy();
+            this.failRoot = null;
+            onRetry();
+        };
+        retry.on(Node.EventType.TOUCH_END, retryAction, this);
+        retry.on(Node.EventType.MOUSE_UP, retryAction, this);
+
+        if (onRevive) {
+            const revive = this.createPanel(root, 'revive_btn', -110, -92, 190, 54, new Color(48, 82, 104, 245), new Color(150, 220, 255, 170), 14);
+            this.createSizedText(revive, 'revive_text', '复活', 0, 0, 170, 34, 24, Color.WHITE);
+            const reviveAction = () => {
+                if (this.failRoot && this.failRoot.isValid) this.failRoot.destroy();
+                this.failRoot = null;
+                onRevive();
+            };
+            revive.on(Node.EventType.TOUCH_END, reviveAction, this);
+            revive.on(Node.EventType.MOUSE_UP, reviveAction, this);
+        }
+    }
+
     public clear() {
         for (const view of this.enemyViews.values()) if (view.node.isValid) view.node.destroy();
         this.enemyViews.clear();
@@ -311,6 +544,8 @@ export class ViewSystem {
         this.hudLabel = null;
         this.tipLabel = null;
         this.gateLabel = null;
+        this.rewardRoot = null;
+        this.failRoot = null;
         this.slots = [];
         this.tiles = [];
     }
@@ -698,6 +933,43 @@ export class ViewSystem {
         label.horizontalAlign = Label.HorizontalAlign.CENTER;
         label.verticalAlign = Label.VerticalAlign.CENTER;
         return node;
+    }
+
+    private createPanel(parent: Node, name: string, x: number, y: number, w: number, h: number, color: Color, stroke: Color, radius = 14) {
+        const node = new Node(name);
+        parent.addChild(node);
+        node.setPosition(x, y, 0);
+        node.addComponent(UITransform).setContentSize(w, h);
+        const graphics = node.addComponent(Graphics);
+        graphics.fillColor = color;
+        graphics.roundRect(-w / 2, -h / 2, w, h, radius);
+        graphics.fill();
+        graphics.strokeColor = stroke;
+        graphics.lineWidth = 2;
+        graphics.roundRect(-w / 2, -h / 2, w, h, radius);
+        graphics.stroke();
+        return node;
+    }
+
+    private createSizedText(parent: Node, name: string, text: string, x: number, y: number, w: number, h: number, fontSize: number, color: Color) {
+        const node = new Node(name);
+        parent.addChild(node);
+        node.setPosition(x, y, 0);
+        node.addComponent(UITransform).setContentSize(w, h);
+        const label = node.addComponent(Label);
+        this.setSizedLabel(label, text, fontSize, color);
+        return node;
+    }
+
+    private setSizedLabel(label: Label, text: string, fontSize: number, color: Color) {
+        label.string = text;
+        label.fontSize = fontSize;
+        label.lineHeight = fontSize + 7;
+        label.color = color;
+        label.horizontalAlign = Label.HorizontalAlign.CENTER;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        label.enableWrapText = true;
+        label.overflow = Label.Overflow.SHRINK;
     }
 
     private createLabel(parent: Node, name: string, text: string, x: number, y: number, w: number, h: number, fontSize: number, color: Color) {

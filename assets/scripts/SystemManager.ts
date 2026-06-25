@@ -6,9 +6,8 @@ import './systems/ViewSystemSkillPatch';
 import './systems/ViewSystemArcherPatch';
 import './systems/ViewSystemRoguelitePatch';
 import './systems/ViewSystemRogueliteFlowPatch';
-import './systems/ViewSystemGameOverPatch';
-import type { RogueliteRewardOption } from './systems/ViewSystemRoguelitePatch';
 import { BagCycle } from './core/BagCycle';
+import type { RogueliteRewardOption } from './core/RewardTypes';
 
 type IdiomDef = {
     idiom: string;
@@ -54,7 +53,7 @@ export class SystemManager {
         discardCooldown: 3.0,
     });
 
-    private readonly levelKillThresholds = [5, 12, 22, 35, 52, 75, 105, 140];
+    private readonly levelKillThresholds = [4, 9, 16, 26, 39, 55, 75, 100, 130];
 
     private readonly ownedCharCounts = new Map<string, number>();
     private readonly unlockedIdioms = new Set<string>();
@@ -186,7 +185,7 @@ export class SystemManager {
 
     private buildRogueLevelConfig(): Partial<LevelConfig> {
         return {
-            name: 'v0.8.6.2_gate_fail_wave',
+            name: 'v0.8.6.3.4_reward_cancel_wave',
             totalEnemies: 180,
             spawnInterval: 1.45,
             enemyTypes: [
@@ -238,7 +237,7 @@ export class SystemManager {
             return false;
         }
 
-        (this.viewSystem as any).showBaiBuPierceEffect?.(results);
+        this.viewSystem.showBaiBuPierceEffect(results);
         for (const result of results) {
             this.viewSystem.showEnemyHitFeedback(result.enemy, result.damage, result.killed);
         }
@@ -331,11 +330,13 @@ export class SystemManager {
         this.rogueLevel++;
         this.rewardPaused = true;
         const options = this.generateRewardOptions();
-        this.viewSystem.showTip(`升级到 Lv.${this.rogueLevel}，选择奖励`);
-        (this.viewSystem as any).showRewardChoices(options, (option: RogueliteRewardOption) => {
+        this.viewSystem.showTip(`升级到 Lv.${this.rogueLevel}，五选二奖励`);
+        this.viewSystem.showRewardChoices(options, 2, (selected: RogueliteRewardOption[]) => {
             if (this.gameOver) return;
-            this.applyReward(option);
+            for (const option of selected) this.applyReward(option);
             this.rewardPaused = false;
+            this.refreshRogueliteTiles();
+            this.viewSystem.showTip(`已选择 ${selected.length} 个奖励，继续守城`);
         });
     }
 
@@ -344,7 +345,8 @@ export class SystemManager {
         const usedTitles = new Set<string>();
         const usedChars = new Set<string>();
 
-        const pushUnique = (option: RogueliteRewardOption) => {
+        const pushUnique = (option: RogueliteRewardOption | null | undefined) => {
+            if (!option) return false;
             if (usedTitles.has(option.title)) return false;
             usedTitles.add(option.title);
             options.push(option);
@@ -353,22 +355,23 @@ export class SystemManager {
         };
 
         pushUnique(this.createCharReward(usedChars));
+        pushUnique(this.createCharReward(usedChars));
+        pushUnique(this.createCharReward(usedChars));
+
+        if (Math.random() < 0.22) pushUnique(this.createGoldIdiomReward());
 
         let guard = 0;
-        while (options.length < 3 && guard++ < 20) {
+        while (options.length < 5 && guard++ < 30) {
             const roll = Math.random();
-            if (roll < 0.12) {
-                const gold = this.createGoldIdiomReward();
-                if (gold && pushUnique(gold)) continue;
-            }
-            if (roll < 0.48) {
+            if (roll < 0.34) {
                 if (pushUnique(this.createRareReward())) continue;
             }
+            if (roll < 0.48 && pushUnique(this.createGoldIdiomReward())) continue;
             pushUnique(this.createCharReward(usedChars));
         }
 
-        while (options.length < 3) pushUnique(this.createRareReward());
-        return options.slice(0, 3);
+        while (options.length < 5) pushUnique(this.createRareReward());
+        return options.slice(0, 5);
     }
 
     private createCharReward(excludeChars?: Set<string>): RogueliteRewardOption {
@@ -529,8 +532,20 @@ export class SystemManager {
         this.bagCycle.reset();
         this.refreshRogueliteTiles();
         this.viewSystem.showTip('城门被破，守城失败');
-        (this.viewSystem as any).showRunFailedPanel?.(reason, this.killCount, this.rogueLevel, () => {
-            if (this.rootNode) this.initLevel(this.rootNode);
-        });
+        this.viewSystem.showRunFailedPanel(
+            {
+                result: 'failed',
+                reason,
+                roomReached: 1,
+                killCount: this.killCount,
+                castCount: 0,
+                strongestIdiom: null,
+                remainingLife: 0,
+                rogueLevel: this.rogueLevel,
+            },
+            () => {
+                if (this.rootNode) this.initLevel(this.rootNode);
+            },
+        );
     }
 }

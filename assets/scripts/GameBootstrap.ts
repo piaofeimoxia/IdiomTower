@@ -1,9 +1,5 @@
 import { _decorator, Component } from 'cc';
 import { SystemManager } from './SystemManager';
-import './systems/ViewSystemRewardPick2Patch';
-import './systems/ViewSystemForcePick2Patch';
-import './systems/ViewSystemRewardCancelPatch';
-import './SystemManagerRewardPatch';
 
 const { ccclass } = _decorator;
 
