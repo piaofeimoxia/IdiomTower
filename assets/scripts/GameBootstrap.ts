@@ -1,11 +1,9 @@
 import { _decorator, Component } from 'cc';
 import { SystemManager } from './SystemManager';
-import './systems/EnemySystemPiercePatch';
 import './systems/ViewSystemRewardPick2Patch';
 import './systems/ViewSystemForcePick2Patch';
 import './systems/ViewSystemRewardCancelPatch';
 import './SystemManagerRewardPatch';
-import './SystemManagerBagCyclePatch';
 
 const { ccclass } = _decorator;
 
