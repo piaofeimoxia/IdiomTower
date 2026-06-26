@@ -7,6 +7,7 @@ export type BagCycleConfig = {
 
 export type DiscardResult =
     | { status: 'discarded'; char: string }
+    | { status: 'discarded'; chars: string[] }
     | { status: 'cooldown'; remain: number }
     | { status: 'empty' };
 
@@ -122,6 +123,30 @@ export class BagCycle {
         return true;
     }
 
+    public prioritizeChars(chars: string[]): string[] {
+        const inserted: string[] = [];
+
+        for (const char of chars) {
+            if (this.bag.includes(char)) continue;
+            const availableIndex = this.available.indexOf(char);
+            if (availableIndex < 0) continue;
+
+            while (this.bag.length >= this.capacity) {
+                const removableIndex = this.bag.findIndex(item => !chars.includes(item));
+                if (removableIndex < 0) return inserted;
+                const [removed] = this.bag.splice(removableIndex, 1);
+                if (removed) this.delayedDiscard.push(removed);
+            }
+
+            this.available.splice(availableIndex, 1);
+            this.bag.push(char);
+            inserted.push(char);
+        }
+
+        this.refillTimer = 0;
+        return inserted;
+    }
+
     public discardLeft(): DiscardResult {
         if (this.cooldownRemain > 0) {
             return { status: 'cooldown', remain: this.cooldownRemain };
@@ -133,6 +158,29 @@ export class BagCycle {
         this.cooldownRemain = this.discardCooldown;
         this.refillTimer = 0;
         return { status: 'discarded', char };
+    }
+
+    public discardChars(chars: string[]): DiscardResult {
+        if (this.cooldownRemain > 0) {
+            return { status: 'cooldown', remain: this.cooldownRemain };
+        }
+
+        const discarded: string[] = [];
+        const nextBag = [...this.bag];
+        for (const char of chars) {
+            const index = nextBag.indexOf(char);
+            if (index < 0) continue;
+            nextBag.splice(index, 1);
+            discarded.push(char);
+        }
+
+        if (discarded.length <= 0) return { status: 'empty' };
+
+        this.bag = nextBag;
+        this.delayedDiscard.push(...discarded);
+        this.cooldownRemain = this.discardCooldown;
+        this.refillTimer = 0;
+        return { status: 'discarded', chars: discarded };
     }
 
     public snapshot(): BagCycleSnapshot {

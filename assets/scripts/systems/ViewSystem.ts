@@ -1,8 +1,9 @@
-import { Node, UITransform, Color, Graphics, Vec3, Label, EventTouch, tween, resources, SpriteFrame, Sprite } from 'cc';
+import { Node, UITransform, Color, Graphics, Vec3, Label, EventTouch, tween, resources, SpriteFrame, Sprite, Button, BlockInputEvents } from 'cc';
 import type { DamageResult, EnemyState, EnemyRemovedReason } from './EnemySystem';
 import type { RogueliteRewardOption, RewardRarity } from '../core/RewardTypes';
 import { RewardSelection } from '../core/RewardSelection';
 import type { RunSummary } from '../core/RunSummary';
+import { chooseSlotForDrag, chooseSlotForTap, chooseTileReleaseAction } from '../core/SlotPlacement';
 
 export type PathPoint = Vec3;
 
@@ -21,7 +22,7 @@ type EnemyView = {
 };
 
 type SlotView = { node: Node; char: string; tile: TileView | null };
-type TileView = { node: Node; char: string; homePos: Vec3; slotIndex: number; dragging: boolean };
+type TileView = { node: Node; char: string; homePos: Vec3; slotIndex: number; dragging: boolean; moved: boolean; touchStartPos: Vec3; startedSlotIndex: number };
 type EnemyVisualSize = { w: number; h: number; fallback: string };
 
 /**
@@ -314,6 +315,9 @@ export class ViewSystem {
         const root = new Node('reward_cancelable_pick_root');
         parent.addChild(root);
         root.addComponent(UITransform).setContentSize(1280, 720);
+        root.addComponent(BlockInputEvents);
+        root.setSiblingIndex(9999);
+        parent.setSiblingIndex(9999);
         this.rewardRoot = root;
 
         this.createPanel(root, 'reward_backdrop', 0, 0, 930, 456, new Color(18, 24, 34, 250), new Color(150, 180, 215, 145), 20);
@@ -342,6 +346,7 @@ export class ViewSystem {
         let completed = false;
 
         const confirm = this.createPanel(root, 'confirm_btn', 0, -198, 190, 48, new Color(62, 68, 78, 245), new Color(150, 165, 185, 150), 14);
+        this.makeRewardButton(confirm);
         const confirmText = this.createSizedText(confirm, 'confirm_text', `先选择 ${pickCount} 个`, 0, 0, 170, 30, 22, new Color(170, 180, 192, 255));
         const confirmLabel = confirmText.getComponent(Label)!;
 
@@ -379,6 +384,7 @@ export class ViewSystem {
             const option = options[i];
             const pos = positions[i];
             const card = this.createPanel(root, `reward_card_${i}`, pos.x, pos.y, 220, 142, rarityPanelColor[option.rarity], rarityColor[option.rarity], 16);
+            this.makeRewardButton(card);
             this.createSizedText(card, `rarity_${i}`, rarityName[option.rarity], 0, 48, 184, 22, 16, rarityColor[option.rarity]);
             this.createSizedText(card, `title_${i}`, option.title, 0, 14, 186, 40, 22, Color.WHITE);
             this.createSizedText(card, `desc_${i}`, option.desc, 0, -36, 186, 48, 15, new Color(220, 232, 240, 255));
@@ -406,8 +412,7 @@ export class ViewSystem {
                 refreshStatus();
             };
 
-            card.on(Node.EventType.TOUCH_END, toggle, this);
-            card.on(Node.EventType.MOUSE_UP, toggle, this);
+            card.on(Button.EventType.CLICK, toggle, this);
         }
 
         const confirmAction = () => {
@@ -422,8 +427,15 @@ export class ViewSystem {
             this.rewardRoot = null;
             onComplete(selected);
         };
-        confirm.on(Node.EventType.TOUCH_END, confirmAction, this);
-        confirm.on(Node.EventType.MOUSE_UP, confirmAction, this);
+        confirm.on(Button.EventType.CLICK, confirmAction, this);
+    }
+
+    private makeRewardButton(node: Node) {
+        const button = node.getComponent(Button) ?? node.addComponent(Button);
+        button.target = node;
+        button.transition = Button.Transition.SCALE;
+        button.duration = 0.06;
+        button.zoomScale = 1.03;
     }
 
     public showBaiBuPierceEffect(results: DamageResult[]) {
@@ -656,7 +668,7 @@ export class ViewSystem {
             const slot = this.createImageNode(this.uiLayer, `slot_${i}`, [this.texturePath.slot], startX + i * gap, y, 92, 92, '', 0);
             this.slots.push({ node: slot, char: '', tile: null });
         }
-        this.createText(this.uiLayer, 'slot_tip', '拖动字块到四个成语槽', 0, -132, 20, new Color(180, 205, 230, 255));
+        this.createText(this.uiLayer, 'slot_tip', '点击或拖动字块到四个成语槽', 0, -132, 20, new Color(180, 205, 230, 255));
     }
 
     private createCharTiles() {
@@ -676,16 +688,19 @@ export class ViewSystem {
 
     private createTile(char: string, index: number, x: number, y: number) {
         const node = this.createImageNode(this.uiLayer, `tile_${char}_${index}`, [this.getTileTexture(char)], x, y, 76, 76, char, 32);
-        const tile: TileView = { node, char, homePos: new Vec3(x, y, 0), slotIndex: -1, dragging: false };
+        const tile: TileView = { node, char, homePos: new Vec3(x, y, 0), slotIndex: -1, dragging: false, moved: false, touchStartPos: new Vec3(x, y, 0), startedSlotIndex: -1 };
         this.tiles.push(tile);
-        node.on(Node.EventType.TOUCH_START, () => this.onTileTouchStart(tile), this);
+        node.on(Node.EventType.TOUCH_START, (e: EventTouch) => this.onTileTouchStart(tile, e), this);
         node.on(Node.EventType.TOUCH_MOVE, (e: EventTouch) => this.onTileTouchMove(tile, e), this);
         node.on(Node.EventType.TOUCH_END, () => this.onTileTouchEnd(tile), this);
         node.on(Node.EventType.TOUCH_CANCEL, () => this.onTileTouchEnd(tile), this);
     }
 
-    private onTileTouchStart(tile: TileView) {
+    private onTileTouchStart(tile: TileView, event: EventTouch) {
         tile.dragging = true;
+        tile.moved = false;
+        tile.startedSlotIndex = tile.slotIndex;
+        tile.touchStartPos = this.getTouchLocalPosition(event) ?? tile.node.position.clone();
         tile.node.setScale(1.12, 1.12, 1);
         tile.node.setSiblingIndex(999);
         if (tile.slotIndex >= 0 && this.slots[tile.slotIndex]) {
@@ -697,10 +712,9 @@ export class ViewSystem {
 
     private onTileTouchMove(tile: TileView, event: EventTouch) {
         if (!tile.dragging || !this.uiLayer) return;
-        const uiPos = event.getUILocation();
-        const parentUI = this.uiLayer.getComponent(UITransform);
-        if (!parentUI) return;
-        const local = parentUI.convertToNodeSpaceAR(new Vec3(uiPos.x, uiPos.y, 0));
+        const local = this.getTouchLocalPosition(event);
+        if (!local) return;
+        if (Vec3.distance(local, tile.touchStartPos) > 12) tile.moved = true;
         tile.node.setPosition(local);
     }
 
@@ -708,31 +722,57 @@ export class ViewSystem {
         if (!tile.dragging) return;
         tile.dragging = false;
         tile.node.setScale(1, 1, 1);
-        const slotIndex = this.findNearestEmptySlot(tile.node.position);
-        if (slotIndex < 0) {
+        const release = chooseTileReleaseAction(this.getSlotPlacements(), {
+            startedInSlot: tile.startedSlotIndex >= 0,
+            moved: tile.moved,
+            position: tile.node.position,
+            threshold: 70,
+        });
+        tile.startedSlotIndex = -1;
+
+        if (release.action === 'returnHome') {
             this.resetTile(tile);
             return;
         }
-        const slot = this.slots[slotIndex];
+
+        if (release.action === 'reset') {
+            this.resetTile(tile);
+            return;
+        }
+        const slot = this.slots[release.slotIndex];
         slot.char = tile.char;
         slot.tile = tile;
-        tile.slotIndex = slotIndex;
+        tile.slotIndex = release.slotIndex;
         tile.node.setPosition(slot.node.position);
         this.checkIdiom();
     }
 
+    private getTouchLocalPosition(event: EventTouch) {
+        if (!this.uiLayer) return null;
+        const parentUI = this.uiLayer.getComponent(UITransform);
+        if (!parentUI) return null;
+        const uiPos = event.getUILocation();
+        return parentUI.convertToNodeSpaceAR(new Vec3(uiPos.x, uiPos.y, 0));
+    }
+
+    private findFirstEmptySlot() {
+        return chooseSlotForTap(this.getSlotPlacements());
+    }
+
     private findNearestEmptySlot(pos: Vec3) {
-        let best = -1;
-        let bestD = 99999;
-        for (let i = 0; i < this.slots.length; i++) {
-            if (this.slots[i].tile) continue;
-            const d = Vec3.distance(pos, this.slots[i].node.position);
-            if (d < 70 && d < bestD) {
-                best = i;
-                bestD = d;
-            }
-        }
-        return best;
+        return chooseSlotForDrag(
+            this.getSlotPlacements(),
+            pos,
+            70,
+        );
+    }
+
+    private getSlotPlacements() {
+        return this.slots.map(slot => ({
+            occupied: Boolean(slot.tile),
+            x: slot.node.position.x,
+            y: slot.node.position.y,
+        }));
     }
 
     private checkIdiom() {
@@ -753,6 +793,16 @@ export class ViewSystem {
             slot.char = '';
             slot.tile = null;
         }
+    }
+
+    public discardComposingSlots() {
+        const chars = this.slots.map(slot => slot.char).filter(Boolean);
+        this.clearSlotsToHome();
+        return chars;
+    }
+
+    public getComposingSlotChars() {
+        return this.slots.map(slot => slot.char).filter(Boolean);
     }
 
     private resetTile(tile: TileView) {

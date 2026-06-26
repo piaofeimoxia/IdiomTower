@@ -286,9 +286,14 @@ export class SystemManager {
             this.viewSystem.showTip('画地为牢：当前没有敌人');
             return false;
         }
+        const results = this.enemySystem.damageAll(35);
         this.viewSystem.showFreezeEffect(freezeSeconds);
-        this.viewSystem.showTip(`画地为牢！冻结 ${count} 个敌人 ${freezeSeconds} 秒`);
-        console.log(`[SystemManager v0.8.6.2] skill 画地为牢 freeze=${count}`);
+        for (const result of results.slice(0, 8)) {
+            this.viewSystem.showEnemyHitFeedback(result.enemy, result.damage, result.killed);
+        }
+        const killed = results.filter(result => result.killed).length;
+        this.viewSystem.showTip(`画地为牢！冻结 ${count} 个敌人 ${freezeSeconds} 秒，并造成定身伤害，击杀 ${killed} 个`);
+        console.log(`[SystemManager v0.8.6.2] skill 画地为牢 freeze=${count}, killed=${killed}`);
         return true;
     }
 
@@ -302,18 +307,26 @@ export class SystemManager {
 
     private discardLeftChar() {
         if (this.gameOver || this.rewardPaused) return;
-        const result = this.bagCycle.discardLeft();
+        const chars = this.viewSystem.getComposingSlotChars();
+        if (chars.length <= 0) {
+            this.viewSystem.showTip('成语槽为空，没有可弃字');
+            return;
+        }
+
+        const result = this.bagCycle.discardChars(chars);
         if (result.status === 'cooldown') {
             this.viewSystem.showTip(`弃字冷却中：${Math.ceil(result.remain)} 秒`);
             return;
         }
         if (result.status === 'empty') {
-            this.viewSystem.showTip('当前没有可弃字');
+            this.viewSystem.showTip('成语槽字已不在战斗袋中，无法弃字');
             return;
         }
 
+        const discarded = 'chars' in result ? result.chars : [result.char];
+        this.viewSystem.discardComposingSlots();
         this.refreshRogueliteTiles();
-        this.viewSystem.showTip(`已弃左侧字「${result.char}」，本轮其它字出现完后才会回到字池`);
+        this.viewSystem.showTip(`已弃成语槽 ${discarded.length} 个字：${discarded.join('、')}，当前字池抽完后才会回流`);
     }
 
     private onEnemyRemoved(_enemy: EnemyState, reason: EnemyRemovedReason) {
@@ -424,7 +437,9 @@ export class SystemManager {
             if (def) {
                 for (const ch of def.chars) this.addChar(ch, 1, true);
                 this.unlockedIdioms.add(def.idiom);
-                this.viewSystem.showTip(`金色奖励：已解锁「${def.idiom}」`);
+                this.bagCycle.prioritizeChars(def.chars);
+                this.refreshRogueliteTiles();
+                this.viewSystem.showTip(`金色奖励：已解锁「${def.idiom}」，四字已优先进入战斗袋`);
             }
             return;
         }
@@ -473,6 +488,8 @@ export class SystemManager {
             const hasAll = def.chars.every(ch => (this.ownedCharCounts.get(ch) ?? 0) > 0);
             if (hasAll) {
                 this.unlockedIdioms.add(def.idiom);
+                this.bagCycle.prioritizeChars(def.chars);
+                this.refreshRogueliteTiles();
                 this.viewSystem.showTip(`已集齐：${def.idiom}，成语解锁！`);
             }
         }

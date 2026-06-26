@@ -62,7 +62,7 @@ function createDiscardButton(self: PatchedViewSystem) {
     }
 
     const root = createPanel(parent, 'rogue_discard_btn_v0861', 500, -272, 112, 50, new Color(50, 58, 72, 238), new Color(160, 190, 220, 150), 12);
-    createText(root, 'discard_text', '弃左字', 0, 5, 100, 24, 20, new Color(235, 242, 255, 255));
+    createText(root, 'discard_text', '弃槽字', 0, 5, 100, 24, 20, new Color(235, 242, 255, 255));
     createText(root, 'discard_hint', '3秒', 0, -17, 100, 18, 15, new Color(170, 205, 230, 255));
     root.on(Node.EventType.TOUCH_END, () => self.__rogueDiscardHandler?.(), self);
     root.on(Node.EventType.MOUSE_UP, () => self.__rogueDiscardHandler?.(), self);
