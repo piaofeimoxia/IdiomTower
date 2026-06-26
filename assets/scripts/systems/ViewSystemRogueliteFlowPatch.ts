@@ -1,6 +1,5 @@
-import { Node, UITransform, Color, Graphics, Vec3, Label } from 'cc';
+import { Node, UITransform, Color, Graphics, Label } from 'cc';
 import { ViewSystem } from './ViewSystem';
-import type { RogueliteRewardOption, RewardRarity } from './ViewSystemRoguelitePatch';
 
 type PatchedViewSystem = ViewSystem & {
     uiLayer?: Node | null;
@@ -13,30 +12,8 @@ type PatchedViewSystem = ViewSystem & {
 
     __rogueChars?: string[];
     __rogueUnlockedIdioms?: string[];
-    __rogueRewardRoot?: Node | null;
     __rogueDiscardRoot?: Node | null;
     __rogueDiscardHandler?: (() => void) | null;
-};
-
-const rarityName: Record<RewardRarity, string> = {
-    common: '普通',
-    rare: '稀有',
-    epic: '史诗',
-    gold: '金色',
-};
-
-const rarityColor: Record<RewardRarity, Color> = {
-    common: new Color(226, 228, 220, 255),
-    rare: new Color(118, 190, 255, 255),
-    epic: new Color(198, 142, 255, 255),
-    gold: new Color(255, 214, 96, 255),
-};
-
-const rarityPanelColor: Record<RewardRarity, Color> = {
-    common: new Color(54, 60, 68, 250),
-    rare: new Color(34, 66, 104, 250),
-    epic: new Color(72, 48, 104, 250),
-    gold: new Color(112, 78, 30, 250),
 };
 
 function setLabel(label: Label, text: string, fontSize: number, color: Color) {
@@ -85,7 +62,7 @@ function createDiscardButton(self: PatchedViewSystem) {
     }
 
     const root = createPanel(parent, 'rogue_discard_btn_v0861', 500, -272, 112, 50, new Color(50, 58, 72, 238), new Color(160, 190, 220, 150), 12);
-    createText(root, 'discard_text', '弃左字', 0, 5, 100, 24, 20, new Color(235, 242, 255, 255));
+    createText(root, 'discard_text', '弃槽字', 0, 5, 100, 24, 20, new Color(235, 242, 255, 255));
     createText(root, 'discard_hint', '3秒', 0, -17, 100, 18, 15, new Color(170, 205, 230, 255));
     root.on(Node.EventType.TOUCH_END, () => self.__rogueDiscardHandler?.(), self);
     root.on(Node.EventType.MOUSE_UP, () => self.__rogueDiscardHandler?.(), self);
@@ -157,57 +134,6 @@ function installRogueliteFlowPatch() {
         }
 
         createDiscardButton(self);
-    };
-
-    proto.showRewardChoices = function(options: RogueliteRewardOption[], onPick: (option: RogueliteRewardOption) => void) {
-        const self = this as PatchedViewSystem;
-        const parent = self.effectLayer ?? self.uiLayer;
-        if (!parent || !parent.isValid) return;
-
-        if (self.__rogueRewardRoot && self.__rogueRewardRoot.isValid) {
-            self.__rogueRewardRoot.destroy();
-        }
-
-        const root = new Node('roguelite_reward_root_v0861');
-        parent.addChild(root);
-        root.setPosition(0, 0, 0);
-        root.addComponent(UITransform).setContentSize(1280, 720);
-        self.__rogueRewardRoot = root;
-
-        createPanel(root, 'reward_backdrop', 0, 0, 790, 330, new Color(18, 24, 34, 248), new Color(120, 150, 190, 135), 18);
-        createText(root, 'reward_title', '升级奖励', 0, 126, 720, 40, 31, new Color(255, 236, 170, 255));
-        createText(root, 'reward_subtitle', '战斗暂停，选择一个构筑方向', 0, 94, 720, 26, 19, new Color(188, 215, 235, 255));
-
-        const xs = [-240, 0, 240];
-        for (let i = 0; i < options.length; i++) {
-            const opt = options[i];
-            const card = createPanel(
-                root,
-                `reward_card_${i}`,
-                xs[i],
-                -34,
-                204,
-                190,
-                rarityPanelColor[opt.rarity],
-                rarityColor[opt.rarity],
-                16
-            );
-
-            createText(card, `reward_rarity_${i}`, rarityName[opt.rarity], 0, 68, 174, 24, 18, rarityColor[opt.rarity]);
-            createText(card, `reward_name_${i}`, opt.title, 0, 28, 176, 48, 23, Color.WHITE);
-            createText(card, `reward_desc_${i}`, opt.desc, 0, -30, 176, 58, 16, new Color(220, 232, 240, 255));
-            createText(card, `reward_hint_${i}`, '点击选择', 0, -78, 176, 20, 15, new Color(170, 220, 255, 255));
-
-            const pick = () => {
-                if (self.__rogueRewardRoot && self.__rogueRewardRoot.isValid) {
-                    self.__rogueRewardRoot.destroy();
-                }
-                self.__rogueRewardRoot = null;
-                onPick(opt);
-            };
-            card.on(Node.EventType.TOUCH_END, pick, self);
-            card.on(Node.EventType.MOUSE_UP, pick, self);
-        }
     };
 }
 

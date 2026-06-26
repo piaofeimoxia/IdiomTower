@@ -1,5 +1,6 @@
 import { Vec3 } from 'cc';
 import { EnemyType } from './WaveSystem';
+import { selectPierceTargetIds } from '../core/PierceTargeting';
 
 export type ArcherState = 'walk' | 'raise' | 'draw' | 'full' | 'release' | 'recover' | 'cooldown';
 
@@ -137,6 +138,36 @@ export class EnemySystem {
         else this.onEnemyUpdated?.(snapshot);
 
         return { enemy: snapshot, damage: amount, killed };
+    }
+
+    public damagePierceClosestToBase(amount: number, pierceCount = 1): DamageResult[] {
+        const targetIds = selectPierceTargetIds(
+            this.enemies.map(enemy => ({
+                id: enemy.id,
+                x: enemy.position.x,
+                y: enemy.position.y,
+                reachedEnd: enemy.reachedEnd,
+            })),
+            pierceCount,
+        );
+        const targets = targetIds
+            .map(id => this.enemies.find(enemy => enemy.id === id))
+            .filter((enemy): enemy is EnemyState => Boolean(enemy));
+        const results: DamageResult[] = [];
+        const removed: EnemyState[] = [];
+
+        for (const target of targets) {
+            target.hp = Math.max(0, target.hp - amount);
+            const killed = target.hp <= 0;
+            const snapshot = this.cloneEnemy(target);
+            results.push({ enemy: snapshot, damage: amount, killed });
+
+            if (killed) removed.push(target);
+            else this.onEnemyUpdated?.(snapshot);
+        }
+
+        for (const enemy of removed) this.removeEnemy(enemy, 'dead');
+        return results;
     }
 
     public damageAll(amount: number): DamageResult[] {

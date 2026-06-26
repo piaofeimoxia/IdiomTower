@@ -1,6 +1,15 @@
 {
   "name": "IdiomTowerDemo",
   "uuid": "bba4df90-fe74-482e-a2cb-9141b9a7ddbe",
+  "scripts": {
+    "test": "tsx --test tests/**/*.test.ts",
+    "typecheck:logic": "tsc -p tsconfig.logic.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
   "creator": {
     "version": "3.8.8"
   }

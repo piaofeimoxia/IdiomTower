@@ -6,8 +6,8 @@ import './systems/ViewSystemSkillPatch';
 import './systems/ViewSystemArcherPatch';
 import './systems/ViewSystemRoguelitePatch';
 import './systems/ViewSystemRogueliteFlowPatch';
-import './systems/ViewSystemGameOverPatch';
-import type { RogueliteRewardOption } from './systems/ViewSystemRoguelitePatch';
+import { BagCycle } from './core/BagCycle';
+import type { RogueliteRewardOption } from './core/RewardTypes';
 
 type IdiomDef = {
     idiom: string;
@@ -47,14 +47,13 @@ export class SystemManager {
     private idiomCharPoolCapacity = 12;
     private baiBuDamage = 120;
 
-    private battleBag: string[] = [];
-    private availableCharPool: string[] = [];
-    private refillTimer = 0;
-    private refillInterval = 0.55;
-    private discardCooldown = 0;
-    private readonly discardCooldownMax = 3.0;
+    private readonly bagCycle = new BagCycle({
+        capacity: 6,
+        refillInterval: 0.55,
+        discardCooldown: 3.0,
+    });
 
-    private readonly levelKillThresholds = [5, 12, 22, 35, 52, 75, 105, 140];
+    private readonly levelKillThresholds = [4, 9, 16, 26, 39, 55, 75, 100, 130];
 
     private readonly ownedCharCounts = new Map<string, number>();
     private readonly unlockedIdioms = new Set<string>();
@@ -133,8 +132,7 @@ export class SystemManager {
         this.battleBagCapacity = 6;
         this.idiomCharPoolCapacity = 12;
         this.baiBuDamage = 120;
-        this.refillTimer = 0;
-        this.discardCooldown = 0;
+        this.bagCycle.setCapacity(this.battleBagCapacity);
         this.resetRogueliteBuild();
 
         this.viewSystem.init(root, this.path);
@@ -163,18 +161,15 @@ export class SystemManager {
             return;
         }
 
-        if (this.discardCooldown > 0 && !this.rewardPaused) {
-            this.discardCooldown = Math.max(0, this.discardCooldown - dt);
-        }
-
         if (!this.rewardPaused) {
-            this.refillBattleBag(dt);
+            if (this.bagCycle.tick(dt)) this.refreshRogueliteTiles();
             this.waveSystem.tick(dt);
             this.enemySystem.tick(dt);
         }
 
+        const bag = this.bagCycle.snapshot();
         this.viewSystem.updateHud(
-            `${this.waveSystem.getStatusText()} | Lv.${this.rogueLevel} | kill=${this.killCount} | next=${this.getNextThresholdText()} | gate=${this.baseLife}/${this.maxBaseLife} | shield=${this.baseShield} | bag=${this.battleBag.length}/${this.battleBagCapacity} | pool=${this.availableCharPool.length}/${this.getOwnedTotal()}`
+            `${this.waveSystem.getStatusText()} | Lv.${this.rogueLevel} | kill=${this.killCount} | next=${this.getNextThresholdText()} | gate=${this.baseLife}/${this.maxBaseLife} | shield=${this.baseShield} | bag=${bag.bag.length}/${this.battleBagCapacity} | pool=${bag.available.length}/${this.getOwnedTotal()}`
         );
     }
 
@@ -190,7 +185,7 @@ export class SystemManager {
 
     private buildRogueLevelConfig(): Partial<LevelConfig> {
         return {
-            name: 'v0.8.6.2_gate_fail_wave',
+            name: 'v0.8.6.3.4_reward_cancel_wave',
             totalEnemies: 180,
             spawnInterval: 1.45,
             enemyTypes: [
@@ -205,16 +200,15 @@ export class SystemManager {
         this.ownedCharCounts.clear();
         this.unlockedIdioms.clear();
         this.unlockedIdioms.add('百步穿杨');
-        this.availableCharPool = [];
-        this.battleBag = [];
+        this.bagCycle.reset();
 
         for (const ch of ['百', '步', '穿', '杨']) {
             this.addChar(ch, 2, false);
         }
 
         // 开局直接给一组完整百步穿杨，保证第一发不用等字。
-        for (const ch of ['百', '步', '穿', '杨']) this.moveSpecificCharFromPoolToBag(ch);
-        this.fillBattleBagInstant();
+        for (const ch of ['百', '步', '穿', '杨']) this.bagCycle.moveSpecificToBag(ch);
+        this.bagCycle.fillInstant();
     }
 
     private releaseIdiomSkill(idiom: string) {
@@ -237,15 +231,21 @@ export class SystemManager {
     }
 
     private releaseBaiBuChuanYang() {
-        const result = this.enemySystem.damageClosestToBase(this.baiBuDamage);
-        if (!result) {
+        const results = this.enemySystem.damagePierceClosestToBase(this.baiBuDamage, 1);
+        if (results.length <= 0) {
             this.viewSystem.showTip('百步穿杨：当前没有目标');
             return false;
         }
 
-        this.viewSystem.showEnemyHitFeedback(result.enemy, result.damage, result.killed);
-        this.viewSystem.showTip(result.killed ? '百步穿杨！点杀最前方敌人' : `百步穿杨！造成 ${result.damage} 点伤害`);
-        console.log(`[SystemManager v0.8.6.2] skill 百步穿杨 damage=${result.damage}, killed=${result.killed}`);
+        this.viewSystem.showBaiBuPierceEffect(results);
+        for (const result of results) {
+            this.viewSystem.showEnemyHitFeedback(result.enemy, result.damage, result.killed);
+        }
+        const killCount = results.filter(result => result.killed).length;
+        this.viewSystem.showTip(results.length >= 2
+            ? `百步穿杨！同排贯穿 ${results.length} 个敌人，击杀 ${killCount} 个`
+            : results[0].killed ? '百步穿杨！点杀最前方敌人' : `百步穿杨！造成 ${this.baiBuDamage} 点伤害`);
+        console.log(`[SystemManager v0.8.6.3.2] skill 百步穿杨 same_lane_pierce=${results.length}, killed=${killCount}`);
         return true;
     }
 
@@ -286,9 +286,14 @@ export class SystemManager {
             this.viewSystem.showTip('画地为牢：当前没有敌人');
             return false;
         }
+        const results = this.enemySystem.damageAll(35);
         this.viewSystem.showFreezeEffect(freezeSeconds);
-        this.viewSystem.showTip(`画地为牢！冻结 ${count} 个敌人 ${freezeSeconds} 秒`);
-        console.log(`[SystemManager v0.8.6.2] skill 画地为牢 freeze=${count}`);
+        for (const result of results.slice(0, 8)) {
+            this.viewSystem.showEnemyHitFeedback(result.enemy, result.damage, result.killed);
+        }
+        const killed = results.filter(result => result.killed).length;
+        this.viewSystem.showTip(`画地为牢！冻结 ${count} 个敌人 ${freezeSeconds} 秒，并造成定身伤害，击杀 ${killed} 个`);
+        console.log(`[SystemManager v0.8.6.2] skill 画地为牢 freeze=${count}, killed=${killed}`);
         return true;
     }
 
@@ -296,74 +301,32 @@ export class SystemManager {
         const def = this.idiomDefs.find(item => item.idiom === idiom);
         if (!def) return;
 
-        for (const ch of def.chars) {
-            const idx = this.battleBag.indexOf(ch);
-            if (idx >= 0) this.battleBag.splice(idx, 1);
-        }
-
         // 使用掉的字回到成语字池，之后再按补字间隔伪随机进入战斗袋。
-        for (const ch of def.chars) this.availableCharPool.push(ch);
-        this.refillTimer = 0;
+        this.bagCycle.consume(def.chars);
     }
 
     private discardLeftChar() {
         if (this.gameOver || this.rewardPaused) return;
-        if (this.discardCooldown > 0) {
-            this.viewSystem.showTip(`弃字冷却中：${Math.ceil(this.discardCooldown)} 秒`);
-            return;
-        }
-        if (this.battleBag.length <= 0) {
-            this.viewSystem.showTip('当前没有可弃字');
+        const chars = this.viewSystem.getComposingSlotChars();
+        if (chars.length <= 0) {
+            this.viewSystem.showTip('成语槽为空，没有可弃字');
             return;
         }
 
-        const ch = this.battleBag.shift();
-        if (ch) this.availableCharPool.push(ch);
-        this.discardCooldown = this.discardCooldownMax;
-        this.refillTimer = 0;
+        const result = this.bagCycle.discardChars(chars);
+        if (result.status === 'cooldown') {
+            this.viewSystem.showTip(`弃字冷却中：${Math.ceil(result.remain)} 秒`);
+            return;
+        }
+        if (result.status === 'empty') {
+            this.viewSystem.showTip('成语槽字已不在战斗袋中，无法弃字');
+            return;
+        }
+
+        const discarded = 'chars' in result ? result.chars : [result.char];
+        this.viewSystem.discardComposingSlots();
         this.refreshRogueliteTiles();
-        this.viewSystem.showTip(`已弃左侧字「${ch}」，稍后补入新字`);
-    }
-
-    private refillBattleBag(dt: number) {
-        if (this.battleBag.length >= this.battleBagCapacity) return;
-        if (this.availableCharPool.length <= 0) return;
-
-        this.refillTimer += dt;
-        while (this.refillTimer >= this.refillInterval && this.battleBag.length < this.battleBagCapacity && this.availableCharPool.length > 0) {
-            this.refillTimer -= this.refillInterval;
-            const ch = this.drawPseudoRandomCharFromPool();
-            if (!ch) break;
-            this.battleBag.push(ch);
-            this.refreshRogueliteTiles();
-        }
-    }
-
-    private fillBattleBagInstant() {
-        while (this.battleBag.length < this.battleBagCapacity && this.availableCharPool.length > 0) {
-            const ch = this.drawPseudoRandomCharFromPool();
-            if (!ch) break;
-            this.battleBag.push(ch);
-        }
-    }
-
-    private moveSpecificCharFromPoolToBag(ch: string) {
-        const idx = this.availableCharPool.indexOf(ch);
-        if (idx < 0) return;
-        this.availableCharPool.splice(idx, 1);
-        this.battleBag.push(ch);
-    }
-
-    private drawPseudoRandomCharFromPool() {
-        if (this.availableCharPool.length <= 0) return '';
-        const recent = this.battleBag.slice(-2);
-        const candidates = this.availableCharPool
-            .map((ch, index) => ({ ch, index }))
-            .filter(item => !(recent.length >= 2 && recent[0] === item.ch && recent[1] === item.ch));
-        const pool = candidates.length > 0 ? candidates : this.availableCharPool.map((ch, index) => ({ ch, index }));
-        const picked = pool[Math.floor(Math.random() * pool.length)];
-        this.availableCharPool.splice(picked.index, 1);
-        return picked.ch;
+        this.viewSystem.showTip(`已弃成语槽 ${discarded.length} 个字：${discarded.join('、')}，当前字池抽完后才会回流`);
     }
 
     private onEnemyRemoved(_enemy: EnemyState, reason: EnemyRemovedReason) {
@@ -380,11 +343,13 @@ export class SystemManager {
         this.rogueLevel++;
         this.rewardPaused = true;
         const options = this.generateRewardOptions();
-        this.viewSystem.showTip(`升级到 Lv.${this.rogueLevel}，选择奖励`);
-        (this.viewSystem as any).showRewardChoices(options, (option: RogueliteRewardOption) => {
+        this.viewSystem.showTip(`升级到 Lv.${this.rogueLevel}，五选二奖励`);
+        this.viewSystem.showRewardChoices(options, 2, (selected: RogueliteRewardOption[]) => {
             if (this.gameOver) return;
-            this.applyReward(option);
+            for (const option of selected) this.applyReward(option);
             this.rewardPaused = false;
+            this.refreshRogueliteTiles();
+            this.viewSystem.showTip(`已选择 ${selected.length} 个奖励，继续守城`);
         });
     }
 
@@ -393,7 +358,8 @@ export class SystemManager {
         const usedTitles = new Set<string>();
         const usedChars = new Set<string>();
 
-        const pushUnique = (option: RogueliteRewardOption) => {
+        const pushUnique = (option: RogueliteRewardOption | null | undefined) => {
+            if (!option) return false;
             if (usedTitles.has(option.title)) return false;
             usedTitles.add(option.title);
             options.push(option);
@@ -402,22 +368,23 @@ export class SystemManager {
         };
 
         pushUnique(this.createCharReward(usedChars));
+        pushUnique(this.createCharReward(usedChars));
+        pushUnique(this.createCharReward(usedChars));
+
+        if (Math.random() < 0.22) pushUnique(this.createGoldIdiomReward());
 
         let guard = 0;
-        while (options.length < 3 && guard++ < 20) {
+        while (options.length < 5 && guard++ < 30) {
             const roll = Math.random();
-            if (roll < 0.12) {
-                const gold = this.createGoldIdiomReward();
-                if (gold && pushUnique(gold)) continue;
-            }
-            if (roll < 0.48) {
+            if (roll < 0.34) {
                 if (pushUnique(this.createRareReward())) continue;
             }
+            if (roll < 0.48 && pushUnique(this.createGoldIdiomReward())) continue;
             pushUnique(this.createCharReward(usedChars));
         }
 
-        while (options.length < 3) pushUnique(this.createRareReward());
-        return options.slice(0, 3);
+        while (options.length < 5) pushUnique(this.createRareReward());
+        return options.slice(0, 5);
     }
 
     private createCharReward(excludeChars?: Set<string>): RogueliteRewardOption {
@@ -470,13 +437,16 @@ export class SystemManager {
             if (def) {
                 for (const ch of def.chars) this.addChar(ch, 1, true);
                 this.unlockedIdioms.add(def.idiom);
-                this.viewSystem.showTip(`金色奖励：已解锁「${def.idiom}」`);
+                this.bagCycle.prioritizeChars(def.chars);
+                this.refreshRogueliteTiles();
+                this.viewSystem.showTip(`金色奖励：已解锁「${def.idiom}」，四字已优先进入战斗袋`);
             }
             return;
         }
 
         if (option.id.startsWith('bag:+1')) {
             this.battleBagCapacity += 1;
+            this.bagCycle.setCapacity(this.battleBagCapacity);
             this.refreshRogueliteTiles();
             this.viewSystem.showTip(`战斗袋容量提升到 ${this.battleBagCapacity}`);
             return;
@@ -508,7 +478,7 @@ export class SystemManager {
                 this.viewSystem.showTip('成语字池已满，临时扩容 +1');
             }
             this.ownedCharCounts.set(ch, (this.ownedCharCounts.get(ch) ?? 0) + 1);
-            this.availableCharPool.push(ch);
+            this.bagCycle.addAvailable(ch);
         }
     }
 
@@ -518,13 +488,15 @@ export class SystemManager {
             const hasAll = def.chars.every(ch => (this.ownedCharCounts.get(ch) ?? 0) > 0);
             if (hasAll) {
                 this.unlockedIdioms.add(def.idiom);
+                this.bagCycle.prioritizeChars(def.chars);
+                this.refreshRogueliteTiles();
                 this.viewSystem.showTip(`已集齐：${def.idiom}，成语解锁！`);
             }
         }
     }
 
     private refreshRogueliteTiles() {
-        (this.viewSystem as any).setRogueliteState?.([...this.battleBag], [...this.unlockedIdioms]);
+        (this.viewSystem as any).setRogueliteState?.(this.bagCycle.snapshot().bag, [...this.unlockedIdioms]);
     }
 
     private getOwnedTotal() {
@@ -574,11 +546,23 @@ export class SystemManager {
         this.enemySystem.clear();
         this.suppressKillCount = false;
 
-        this.battleBag = [];
+        this.bagCycle.reset();
         this.refreshRogueliteTiles();
         this.viewSystem.showTip('城门被破，守城失败');
-        (this.viewSystem as any).showRunFailedPanel?.(reason, this.killCount, this.rogueLevel, () => {
-            if (this.rootNode) this.initLevel(this.rootNode);
-        });
+        this.viewSystem.showRunFailedPanel(
+            {
+                result: 'failed',
+                reason,
+                roomReached: 1,
+                killCount: this.killCount,
+                castCount: 0,
+                strongestIdiom: null,
+                remainingLife: 0,
+                rogueLevel: this.rogueLevel,
+            },
+            () => {
+                if (this.rootNode) this.initLevel(this.rootNode);
+            },
+        );
     }
 }
